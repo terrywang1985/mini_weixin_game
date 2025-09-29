@@ -43,4 +43,5 @@ next-env.d.ts
 # 其他可能的构建产物
 out/
 
-/gdserver/tools/code/gdserver/tools/code/*
+/gdserver/tools/code/
+gdserver/tools/code/*
