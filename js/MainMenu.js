@@ -1,0 +1,331 @@
+/**
+ * 主菜单页面 - 显示创建房间和房间列表按钮
+ */
+
+import GameStateManager from './GameStateManager.js';
+
+class MainMenu {
+    constructor(canvas, networkManager) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+        this.networkManager = networkManager;
+        
+        // 页面元素
+        this.buttons = [];
+        this.isVisible = false;
+        
+        // 界面配置
+        this.config = {
+            backgroundColor: '#2c3e50',
+            buttonColor: '#3498db',
+            buttonHoverColor: '#2980b9',
+            textColor: '#ffffff',
+            titleColor: '#ecf0f1',
+            buttonWidth: 200,
+            buttonHeight: 60,
+            buttonSpacing: 20
+        };
+        
+        this.init();
+        this.bindEvents();
+    }
+    
+    init() {
+        // 创建按钮
+        this.createButtons();
+        
+        // 监听游戏状态变化
+        GameStateManager.onStateChange((oldState, newState) => {
+            if (newState === GameStateManager.GAME_STATES.MAIN_MENU) {
+                this.show();
+            } else {
+                this.hide();
+            }
+        });
+    }
+    
+    createButtons() {
+        const centerX = this.canvas.width / 2;
+        const centerY = this.canvas.height / 2;
+        
+        // 创建房间按钮
+        this.buttons.push({
+            id: 'create_room',
+            text: '创建房间',
+            x: centerX - this.config.buttonWidth / 2,
+            y: centerY - this.config.buttonHeight - this.config.buttonSpacing / 2,
+            width: this.config.buttonWidth,
+            height: this.config.buttonHeight,
+            isHovered: false,
+            onClick: () => this.onCreateRoomClick()
+        });
+        
+        // 房间列表按钮
+        this.buttons.push({
+            id: 'room_list',
+            text: '房间列表',
+            x: centerX - this.config.buttonWidth / 2,
+            y: centerY + this.config.buttonSpacing / 2,
+            width: this.config.buttonWidth,
+            height: this.config.buttonHeight,
+            isHovered: false,
+            onClick: () => this.onRoomListClick()
+        });
+    }
+    
+    bindEvents() {
+        // 微信小游戏触摸事件
+        if (typeof wx !== 'undefined') {
+            wx.onTouchStart((e) => {
+                if (!this.isVisible) return;
+                
+                const touch = e.touches[0];
+                const touchX = touch.clientX;
+                const touchY = touch.clientY;
+                
+                this.buttons.forEach(button => {
+                    if (this.isPointInButton(touchX, touchY, button)) {
+                        button.onClick();
+                    }
+                });
+            });
+        } else {
+            // 浏览器环境的事件处理
+            // 鼠标移动事件
+            this.canvas.addEventListener('mousemove', (e) => {
+                if (!this.isVisible) return;
+                
+                const rect = this.canvas.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+                
+                this.buttons.forEach(button => {
+                    button.isHovered = this.isPointInButton(mouseX, mouseY, button);
+                });
+                
+                this.render();
+            });
+            
+            // 鼠标点击事件
+            this.canvas.addEventListener('click', (e) => {
+                if (!this.isVisible) return;
+                
+                const rect = this.canvas.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+                
+                this.buttons.forEach(button => {
+                    if (this.isPointInButton(mouseX, mouseY, button)) {
+                        button.onClick();
+                    }
+                });
+            });
+            
+            // 触摸事件（移动端浏览器支持）
+            this.canvas.addEventListener('touchstart', (e) => {
+                if (!this.isVisible) return;
+                
+                e.preventDefault();
+                const touch = e.touches[0];
+                const rect = this.canvas.getBoundingClientRect();
+                const touchX = touch.clientX - rect.left;
+                const touchY = touch.clientY - rect.top;
+                
+                this.buttons.forEach(button => {
+                    if (this.isPointInButton(touchX, touchY, button)) {
+                        button.onClick();
+                    }
+                });
+            });
+        }
+    }
+    
+    isPointInButton(x, y, button) {
+        return x >= button.x && 
+               x <= button.x + button.width && 
+               y >= button.y && 
+               y <= button.y + button.height;
+    }
+    
+    show() {
+        this.isVisible = true;
+        this.render();
+        console.log("显示主菜单");
+    }
+    
+    hide() {
+        this.isVisible = false;
+        console.log("隐藏主菜单");
+    }
+    
+    render() {
+        if (!this.isVisible) return;
+        
+        // 清空画布
+        this.ctx.fillStyle = this.config.backgroundColor;
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        
+        // 绘制标题
+        this.drawTitle();
+        
+        // 绘制用户信息
+        this.drawUserInfo();
+        
+        // 绘制按钮
+        this.drawButtons();
+        
+        // 绘制连接状态
+        this.drawConnectionStatus();
+    }
+    
+    drawTitle() {
+        this.ctx.fillStyle = this.config.titleColor;
+        this.ctx.font = 'bold 32px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        
+        const titleY = this.canvas.height / 2 - 120;
+        this.ctx.fillText('微信小游戏', this.canvas.width / 2, titleY);
+    }
+    
+    drawUserInfo() {
+        const userInfo = GameStateManager.getUserInfo();
+        if (userInfo.nickname) {
+            this.ctx.fillStyle = this.config.textColor;
+            this.ctx.font = '16px Arial';
+            this.ctx.textAlign = 'center';
+            
+            const userY = this.canvas.height / 2 - 80;
+            this.ctx.fillText(`欢迎，${userInfo.nickname}`, this.canvas.width / 2, userY);
+        }
+    }
+    
+    drawButtons() {
+        this.buttons.forEach(button => {
+            // 绘制按钮背景
+            this.ctx.fillStyle = button.isHovered ? 
+                this.config.buttonHoverColor : 
+                this.config.buttonColor;
+            
+            this.ctx.fillRect(button.x, button.y, button.width, button.height);
+            
+            // 绘制按钮边框
+            this.ctx.strokeStyle = this.config.textColor;
+            this.ctx.lineWidth = 2;
+            this.ctx.strokeRect(button.x, button.y, button.width, button.height);
+            
+            // 绘制按钮文字
+            this.ctx.fillStyle = this.config.textColor;
+            this.ctx.font = '18px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            
+            const textX = button.x + button.width / 2;
+            const textY = button.y + button.height / 2;
+            this.ctx.fillText(button.text, textX, textY);
+        });
+    }
+    
+    drawConnectionStatus() {
+        const networkStatus = GameStateManager.getNetworkStatus();
+        
+        // 绘制连接状态指示器
+        const statusX = 20;
+        const statusY = 20;
+        const statusRadius = 8;
+        
+        this.ctx.beginPath();
+        this.ctx.arc(statusX, statusY, statusRadius, 0, 2 * Math.PI);
+        this.ctx.fillStyle = networkStatus.isConnected && networkStatus.isAuthenticated ? 
+            '#27ae60' : '#e74c3c';
+        this.ctx.fill();
+        
+        // 绘制状态文字
+        this.ctx.fillStyle = this.config.textColor;
+        this.ctx.font = '14px Arial';
+        this.ctx.textAlign = 'left';
+        this.ctx.textBaseline = 'middle';
+        
+        const statusText = networkStatus.isConnected && networkStatus.isAuthenticated ? 
+            '已连接' : '未连接';
+        this.ctx.fillText(statusText, statusX + statusRadius + 10, statusY);
+    }
+    
+    onCreateRoomClick() {
+        console.log("点击创建房间");
+        
+        if (!GameStateManager.isAuthenticated()) {
+            this.showMessage("请先登录");
+            return;
+        }
+        
+        // 弹出输入框让用户输入房间名称
+        this.showCreateRoomDialog();
+    }
+    
+    onRoomListClick() {
+        console.log("点击房间列表");
+        
+        if (!GameStateManager.isAuthenticated()) {
+            this.showMessage("请先登录");
+            return;
+        }
+        
+        // 请求房间列表
+        this.networkManager.getRoomList();
+        
+        // 切换到房间列表页面
+        GameStateManager.setGameState(GameStateManager.GAME_STATES.ROOM_LIST);
+    }
+    
+    showCreateRoomDialog() {
+        // 简单的房间名称输入
+        const roomName = prompt("请输入房间名称:", "我的房间");
+        
+        if (roomName && roomName.trim()) {
+            console.log("创建房间:", roomName.trim());
+            this.networkManager.createRoom(roomName.trim());
+        }
+    }
+    
+    showMessage(message) {
+        // 显示消息提示
+        console.log("消息提示:", message);
+        
+        // 在微信小游戏中可以使用 wx.showToast
+        if (typeof wx !== 'undefined' && wx.showToast) {
+            wx.showToast({
+                title: message,
+                icon: 'none',
+                duration: 2000
+            });
+        } else {
+            // 开发环境使用alert
+            alert(message);
+        }
+    }
+    
+    // 更新画布尺寸
+    updateCanvasSize() {
+        // 重新计算按钮位置
+        this.buttons = [];
+        this.createButtons();
+        
+        if (this.isVisible) {
+            this.render();
+        }
+    }
+    
+    // 销毁页面
+    destroy() {
+        this.isVisible = false;
+        this.buttons = [];
+        
+        // 移除事件监听器
+        this.canvas.removeEventListener('mousemove', this.onMouseMove);
+        this.canvas.removeEventListener('click', this.onClick);
+        this.canvas.removeEventListener('touchstart', this.onTouchStart);
+    }
+}
+
+export default MainMenu;

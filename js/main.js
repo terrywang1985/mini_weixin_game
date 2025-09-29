@@ -1,0 +1,451 @@
+import NetworkManager from './NetworkManager.js';
+import GameStateManager from './GameStateManager.js';
+import MainMenu from './MainMenu.js';
+import RoomList from './RoomList.js';
+import GameRoom from './GameRoom.js';
+
+/**
+ * 微信小游戏主函数 - 重构版本
+ * 实现自动游客登录、房间管理功能
+ */
+export default class Main {
+  constructor() {
+    console.log("=== 微信小游戏启动 ===");
+    
+    // 在微信小游戏环境中获取canvas
+    this.canvas = this.getCanvas();
+    this.ctx = this.canvas.getContext('2d');
+    
+    // 设置canvas尺寸
+    this.setupCanvas();
+    
+    // 初始化网络管理器
+    this.networkManager = new NetworkManager();
+    
+    // 初始化UI页面
+    this.mainMenu = new MainMenu(this.canvas, this.networkManager);
+    this.roomList = new RoomList(this.canvas, this.networkManager);
+    this.gameRoom = new GameRoom(this.canvas, this.networkManager);
+    
+    // 当前活动页面
+    this.currentPage = null;
+    
+    // 加载状态
+    this.isLoading = true;
+    this.loadingMessage = "正在连接服务器...";
+    
+    this.init();
+    this.bindEvents();
+    this.startGameLoop();
+  }
+  
+  async init() {
+    console.log("初始化游戏...");
+    
+    // 设置初始加载状态
+    GameStateManager.setGameState(GameStateManager.GAME_STATES.LOADING);
+    
+    // 监听游戏状态变化
+    GameStateManager.onStateChange((oldState, newState) => {
+      this.onGameStateChange(oldState, newState);
+    });
+    
+    // 监听网络事件
+    this.setupNetworkEvents();
+    
+    // 开始自动游客登录流程
+    await this.startAutoLogin();
+  }
+  
+  // 获取微信小游戏canvas
+  getCanvas() {
+    if (typeof wx !== 'undefined') {
+      // 微信小游戏环境
+      console.log("微信小游戏环境，获取canvas");
+      
+      // 尝试使用全局canvas对象（推荐方式）
+      if (typeof canvas !== 'undefined') {
+        console.log("使用全局canvas对象");
+        return canvas;
+      }
+      
+      // 如果没有全局canvas，尝试创建
+      if (wx.createCanvas) {
+        console.log("使用wx.createCanvas创建canvas");
+        return wx.createCanvas();
+      }
+      
+      // 最后的fallback
+      console.error("无法获取canvas对象");
+      return null;
+    } else if (typeof canvas !== 'undefined') {
+      // 调试环境可能有全局canvas
+      console.log("使用全局canvas对象（调试环境）");
+      return canvas;
+    } else {
+      // 浏览器环境，创建canvas元素
+      console.log("浏览器环境，创建canvas元素");
+      const canvasElement = document.createElement('canvas');
+      document.body.appendChild(canvasElement);
+      return canvasElement;
+    }
+  }
+  
+  // 设置canvas尺寸和样式
+  setupCanvas() {
+    if (!this.canvas) {
+      console.error("Canvas对象为空，无法设置尺寸");
+      return;
+    }
+    
+    if (typeof wx !== 'undefined') {
+      // 微信小游戏环境，获取系统信息
+      try {
+        const systemInfo = wx.getSystemInfoSync();
+        console.log("系统信息:", systemInfo);
+        
+        // 设置canvas尺寸
+        this.canvas.width = systemInfo.windowWidth || 375;
+        this.canvas.height = systemInfo.windowHeight || 667;
+        
+        console.log(`Canvas尺寸设置为: ${this.canvas.width}x${this.canvas.height}`);
+      } catch (error) {
+        console.error("获取系统信息失败:", error);
+        // 使用默认尺寸
+        this.canvas.width = 375;
+        this.canvas.height = 667;
+        console.log(`使用默认Canvas尺寸: ${this.canvas.width}x${this.canvas.height}`);
+      }
+    } else {
+      // 其他环境，设置默认尺寸
+      this.canvas.width = 375;
+      this.canvas.height = 667;
+      console.log(`设置默认Canvas尺寸: ${this.canvas.width}x${this.canvas.height}`);
+    }
+    
+    // 设置画布样式
+    if (this.ctx) {
+      this.ctx.fillStyle = '#000000';
+      this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    }
+  }
+  
+  async startAutoLogin() {
+    try {
+      console.log("开始自动游客登录...");
+      this.loadingMessage = "正在登录...";
+      
+      // 测试网络环境
+      this.testNetworkEnvironment();
+      
+      // 执行游客登录
+      const loginSuccess = await this.networkManager.guestLogin();
+      
+      if (loginSuccess) {
+        console.log("自动登录成功");
+        this.loadingMessage = "登录成功！";
+      } else {
+        console.error("自动登录失败");
+        this.loadingMessage = "登录失败，请重试";
+        this.isLoading = false;
+      }
+    } catch (error) {
+      console.error("自动登录过程中发生错误:", error);
+      this.loadingMessage = "连接失败: " + error.message;
+      this.isLoading = false;
+    }
+  }
+  
+  // 测试网络环境
+  testNetworkEnvironment() {
+    console.log("=== 网络环境检测 ===");
+    
+    if (typeof wx !== 'undefined') {
+      console.log("✅ 微信小游戏环境");
+      console.log("HTTP API:", wx.request ? "可用" : "不可用");
+      console.log("WebSocket API:", wx.connectSocket ? "可用" : "不可用");
+      
+      try {
+        const systemInfo = wx.getSystemInfoSync();
+        console.log("系统信息:", systemInfo.platform, systemInfo.version);
+      } catch (e) {
+        console.log("获取系统信息失败:", e);
+      }
+    } else {
+      console.log("🌐 浏览器环境");
+      console.log("Fetch API:", typeof fetch !== 'undefined' ? "可用" : "不可用");
+      console.log("WebSocket API:", typeof WebSocket !== 'undefined' ? "可用" : "不可用");
+    }
+  }
+  
+  setupNetworkEvents() {
+    // HTTP登录事件
+    this.networkManager.on('http_login_success', () => {
+      console.log("HTTP登录成功");
+      this.loadingMessage = "正在连接服务器...";
+    });
+    
+    this.networkManager.on('http_login_failed', (error) => {
+      console.error("HTTP登录失败:", error);
+      this.loadingMessage = "登录失败: " + error;
+      this.isLoading = false;
+    });
+    
+    // WebSocket连接事件
+    this.networkManager.on('connected', () => {
+      console.log("WebSocket连接成功");
+      this.loadingMessage = "正在认证...";
+    });
+    
+    this.networkManager.on('disconnected', () => {
+      console.log("WebSocket连接断开");
+      this.showReconnectDialog();
+    });
+    
+    // 认证事件
+    this.networkManager.on('auth_success', (userInfo) => {
+      console.log("认证成功:", userInfo);
+      this.isLoading = false;
+      this.loadingMessage = "";
+    });
+    
+    this.networkManager.on('auth_failed', (error) => {
+      console.error("认证失败:", error);
+      this.loadingMessage = "认证失败: " + error;
+      this.isLoading = false;
+    });
+    
+    // 房间相关事件
+    this.networkManager.on('room_created', (room) => {
+      console.log("房间创建成功:", room);
+    });
+    
+    this.networkManager.on('room_joined', () => {
+      console.log("加入房间成功");
+    });
+    
+    this.networkManager.on('room_list_received', (rooms) => {
+      console.log("收到房间列表:", rooms);
+    });
+  }
+  
+  onGameStateChange(oldState, newState) {
+    console.log(`游戏状态变化: ${oldState} -> ${newState}`);
+    
+    // 隐藏所有页面
+    this.mainMenu.hide();
+    this.roomList.hide();
+    this.gameRoom.hide();
+    
+    // 显示对应的页面
+    switch (newState) {
+      case GameStateManager.GAME_STATES.MAIN_MENU:
+        this.currentPage = this.mainMenu;
+        this.mainMenu.show();
+        break;
+      case GameStateManager.GAME_STATES.ROOM_LIST:
+        this.currentPage = this.roomList;
+        this.roomList.show();
+        break;
+      case GameStateManager.GAME_STATES.IN_ROOM:
+        this.currentPage = this.gameRoom;
+        this.gameRoom.show();
+        break;
+      case GameStateManager.GAME_STATES.LOADING:
+        this.currentPage = null;
+        this.isLoading = true;
+        break;
+      default:
+        this.currentPage = null;
+        break;
+    }
+  }
+  
+  bindEvents() {
+    // 处理画布尺寸变化
+    this.updateCanvasSize();
+    
+    // 监听窗口尺寸变化（如果需要）
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', () => {
+        this.updateCanvasSize();
+      });
+    }
+    
+    // 处理错误
+    window.addEventListener('error', (event) => {
+      console.error("全局错误:", event.error);
+    });
+    
+    // 处理未捕获的Promise错误
+    window.addEventListener('unhandledrejection', (event) => {
+      console.error("未处理的Promise错误:", event.reason);
+    });
+  }
+  
+  updateCanvasSize() {
+    // 获取屏幕尺寸
+    const screenWidth = window.innerWidth || 375;
+    const screenHeight = window.innerHeight || 667;
+    
+    // 设置canvas尺寸
+    this.canvas.width = screenWidth;
+    this.canvas.height = screenHeight;
+    
+    // 更新所有页面的画布尺寸
+    this.mainMenu.updateCanvasSize();
+    this.roomList.updateCanvasSize();
+    this.gameRoom.updateCanvasSize();
+    
+    console.log(`画布尺寸更新: ${screenWidth}x${screenHeight}`);
+  }
+  
+  startGameLoop() {
+    const gameLoop = () => {
+      this.update();
+      this.render();
+      requestAnimationFrame(gameLoop);
+    };
+    
+    requestAnimationFrame(gameLoop);
+    console.log("游戏循环已启动");
+  }
+  
+  update() {
+    // 这里可以添加全局更新逻辑
+    // 例如：网络状态检查、心跳包等
+  }
+  
+  render() {
+    // 清空画布
+    this.ctx.fillStyle = '#000000';
+    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    
+    if (this.isLoading) {
+      this.renderLoadingScreen();
+    } else if (this.currentPage) {
+      // 当前页面会自己处理渲染
+      // this.currentPage.render() 已经在各自的show()方法中调用
+    } else {
+      this.renderErrorScreen();
+    }
+  }
+  
+  renderLoadingScreen() {
+    const centerX = this.canvas.width / 2;
+    const centerY = this.canvas.height / 2;
+    
+    // 绘制加载背景
+    this.ctx.fillStyle = '#2c3e50';
+    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    
+    // 绘制加载标题
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.font = 'bold 28px Arial';
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'middle';
+    this.ctx.fillText('微信小游戏', centerX, centerY - 60);
+    
+    // 绘制加载消息
+    this.ctx.font = '16px Arial';
+    this.ctx.fillStyle = '#bdc3c7';
+    this.ctx.fillText(this.loadingMessage, centerX, centerY);
+    
+    // 绘制简单的加载动画
+    const time = Date.now() / 1000;
+    const dots = Math.floor(time * 2) % 4;
+    const dotString = '.'.repeat(dots);
+    this.ctx.fillText(dotString, centerX, centerY + 30);
+    
+    // 绘制版本信息
+    this.ctx.font = '12px Arial';
+    this.ctx.fillStyle = '#7f8c8d';
+    this.ctx.fillText('版本 1.0.0', centerX, this.canvas.height - 30);
+  }
+  
+  renderErrorScreen() {
+    const centerX = this.canvas.width / 2;
+    const centerY = this.canvas.height / 2;
+    
+    // 绘制错误背景
+    this.ctx.fillStyle = '#e74c3c';
+    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    
+    // 绘制错误信息
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.font = 'bold 24px Arial';
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'middle';
+    this.ctx.fillText('连接失败', centerX, centerY - 30);
+    
+    this.ctx.font = '16px Arial';
+    this.ctx.fillText('请检查网络连接', centerX, centerY + 10);
+    
+    // 重试按钮
+    const buttonWidth = 120;
+    const buttonHeight = 40;
+    const buttonX = centerX - buttonWidth / 2;
+    const buttonY = centerY + 50;
+    
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillRect(buttonX, buttonY, buttonWidth, buttonHeight);
+    
+    this.ctx.fillStyle = '#e74c3c';
+    this.ctx.font = '16px Arial';
+    this.ctx.fillText('重试', centerX, buttonY + buttonHeight / 2);
+  }
+  
+  showReconnectDialog() {
+    // 显示重连对话框
+    if (typeof wx !== 'undefined' && wx.showModal) {
+      wx.showModal({
+        title: '连接断开',
+        content: '与服务器的连接已断开，是否重新连接？',
+        success: (res) => {
+          if (res.confirm) {
+            this.reconnect();
+          }
+        }
+      });
+    } else {
+      const reconnect = confirm('与服务器的连接已断开，是否重新连接？');
+      if (reconnect) {
+        this.reconnect();
+      }
+    }
+  }
+  
+  async reconnect() {
+    console.log("尝试重新连接...");
+    this.isLoading = true;
+    this.loadingMessage = "正在重新连接...";
+    GameStateManager.setGameState(GameStateManager.GAME_STATES.LOADING);
+    
+    try {
+      await this.startAutoLogin();
+    } catch (error) {
+      console.error("重连失败:", error);
+      this.loadingMessage = "重连失败: " + error.message;
+      this.isLoading = false;
+    }
+  }
+  
+  // 获取调试信息
+  getDebugInfo() {
+    return {
+      gameState: GameStateManager.getCurrentState(),
+      networkConnected: GameStateManager.isConnected(),
+      authenticated: GameStateManager.isAuthenticated(),
+      currentRoom: GameStateManager.getCurrentRoom(),
+      userInfo: GameStateManager.getUserInfo()
+    };
+  }
+  
+  // 打印调试信息（开发用）
+  printDebugInfo() {
+    console.log("=== 游戏调试信息 ===");
+    console.log(this.getDebugInfo());
+    GameStateManager.printDebugInfo();
+    console.log("==================");
+  }
+}

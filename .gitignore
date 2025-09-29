@@ -1,0 +1,46 @@
+# 依赖项目录 - npm 或 yarn 安装的包
+node_modules/
+.pnp/
+.pnp.js
+
+# 测试相关
+coverage/
+
+# 生产环境构建产物
+build/
+dist/
+
+# 环境变量文件 - 包含敏感信息
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# 日志文件
+logs/
+*.log
+
+# 操作系统生成的文件
+.DS_Store        # macOS
+Thumbs.db        # Windows
+
+# 编辑器/IDE 配置文件
+.idea/           # IntelliJ 系列
+.vscode/         # VS Code
+*.swp            # Vim 交换文件
+*.swo            # Vim 交换文件
+
+# npm 相关
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# TypeScript 相关
+*.tsbuildinfo
+next-env.d.ts
+
+# 其他可能的构建产物
+out/
+
+/gdserver/tools/code/
