@@ -59,9 +59,14 @@ class NetworkManager {
     async guestLogin(testSuffix = "") {
         console.log("开始HTTP游客登录...");
         
-        // 生成设备ID
+        // 生成唯一的设备ID，确保多窗口不冲突
         const baseDeviceId = "wxgame_" + this.generateDeviceId();
-        const deviceId = testSuffix ? `${baseDeviceId}_test_${testSuffix}` : baseDeviceId;
+        const windowInstance = Math.floor(Math.random() * 100000); // 窗口实例标识
+        const deviceId = testSuffix 
+            ? `${baseDeviceId}_test_${testSuffix}_${windowInstance}` 
+            : `${baseDeviceId}_${windowInstance}`;
+        
+        console.log("生成的设备ID:", deviceId);
         
         const loginData = {
             device_id: deviceId,
@@ -349,6 +354,9 @@ class NetworkManager {
                 case this.protobuf.MESSAGE_IDS.GET_READY_RESPONSE:
                     this.handleGetReadyResponse(msgData);
                     break;
+                case this.protobuf.MESSAGE_IDS.GAME_ACTION_NOTIFICATION:
+                    this.handleGameActionNotification(msgData);
+                    break;
                 default:
                     console.log("未知的消息ID:", msgId);
             }
@@ -407,6 +415,13 @@ class NetworkManager {
         console.log("加入房间:", roomId);
         this.currentRoomId = roomId;
         const finalPacket = this.protobuf.createJoinRoomRequest(roomId);
+        this.sendWebSocketMessage(finalPacket);
+    }
+    
+    // 发送准备状态
+    sendReady(isReady) {
+        console.log("发送准备状态:", isReady);
+        const finalPacket = this.protobuf.createGetReadyRequest(isReady);
         this.sendWebSocketMessage(finalPacket);
     }
     
@@ -469,8 +484,18 @@ class NetworkManager {
     
     // 工具方法
     generateDeviceId() {
-        // 简单的设备ID生成
-        return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+        // 增强的设备ID生成，确保多窗口唯一性
+        const timestamp = Date.now().toString(36);
+        const random1 = Math.random().toString(36).substr(2, 9);
+        const random2 = Math.random().toString(36).substr(2, 5);
+        const windowId = Math.floor(Math.random() * 10000).toString(36);
+        
+        // 添加性能时间戳作为额外的唯一性保证
+        const perfTime = (typeof performance !== 'undefined' && performance.now) 
+            ? Math.floor(performance.now() * 1000).toString(36) 
+            : Math.floor(Math.random() * 1000000).toString(36);
+            
+        return `${timestamp}_${random1}_${random2}_${windowId}_${perfTime}`;
     }
     
     // HTTP请求封装（微信小游戏环境）
@@ -643,13 +668,25 @@ class NetworkManager {
     
     // 处理准备响应
     handleGetReadyResponse(data) {
-        const response = this.protobuf.deserializeMessage(data);
+        const response = this.protobuf.parseGetReadyResponse(data);
         if (!response) return;
         
-        if (response.ret === 0) {
+        if (response.success) {
             console.log("准备成功");
+            // 可以触发事件通知UI更新
+            this.emit('ready_status_updated', response.isReady);
         } else {
-            console.error("准备失败: 错误码", response.ret);
+            console.error("准备失败:", response.message);
+        }
+    }
+    
+    // 处理游戏动作通知
+    handleGameActionNotification(data) {
+        console.log("收到游戏动作通知，数据长度:", data ? data.length : 'null');
+        // 暂时只记录，后续根据游戏需要实现具体逻辑
+        if (data && data.length > 0) {
+            const hexString = Array.from(data).map(b => b.toString(16).padStart(2, '0')).join(' ');
+            console.log('游戏动作通知数据 (hex):', hexString);
         }
     }
 }

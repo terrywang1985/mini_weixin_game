@@ -102,25 +102,23 @@ export default class Main {
       // 微信小游戏环境，获取系统信息
       try {
         const systemInfo = wx.getSystemInfoSync();
-        console.log("系统信息:", systemInfo);
-        
-        // 设置canvas尺寸
         this.canvas.width = systemInfo.windowWidth || 375;
         this.canvas.height = systemInfo.windowHeight || 667;
-        
-        console.log(`Canvas尺寸设置为: ${this.canvas.width}x${this.canvas.height}`);
       } catch (error) {
         console.error("获取系统信息失败:", error);
-        // 使用默认尺寸
         this.canvas.width = 375;
         this.canvas.height = 667;
-        console.log(`使用默认Canvas尺寸: ${this.canvas.width}x${this.canvas.height}`);
       }
     } else {
       // 其他环境，设置默认尺寸
       this.canvas.width = 375;
       this.canvas.height = 667;
-      console.log(`设置默认Canvas尺寸: ${this.canvas.width}x${this.canvas.height}`);
+    }
+    
+    // 如果尺寸还是不对，强制设置
+    if (this.canvas.width <= 1 || this.canvas.height <= 1) {
+      this.canvas.width = 375;
+      this.canvas.height = 667;
     }
     
     // 设置画布样式
@@ -138,8 +136,9 @@ export default class Main {
       // 测试网络环境
       this.testNetworkEnvironment();
       
-      // 执行游客登录
-      const loginSuccess = await this.networkManager.guestLogin();
+      // 执行游客登录，传入窗口实例标识
+      const windowInstance = Math.floor(Date.now() / 1000) % 10000; // 基于秒级时间戳的窗口标识
+      const loginSuccess = await this.networkManager.guestLogin(windowInstance.toString());
       
       if (loginSuccess) {
         console.log("自动登录成功");
@@ -207,6 +206,12 @@ export default class Main {
       console.log("认证成功:", userInfo);
       this.isLoading = false;
       this.loadingMessage = "";
+      
+      // 确保状态正确切换到主菜单
+      const currentState = GameStateManager.getCurrentState();
+      if (currentState === GameStateManager.GAME_STATES.MAIN_MENU) {
+        this.onGameStateChange('loading', GameStateManager.GAME_STATES.MAIN_MENU);
+      }
     });
     
     this.networkManager.on('auth_failed', (error) => {
@@ -218,6 +223,20 @@ export default class Main {
     // 房间相关事件
     this.networkManager.on('room_created', (room) => {
       console.log("房间创建成功:", room);
+      
+      // 显示房间ID给用户，让朋友可以加入
+      if (room && room.id) {
+        if (typeof wx !== 'undefined' && wx.showModal) {
+          wx.showModal({
+            title: '房间创建成功',
+            content: `房间ID: ${room.id}\n请把这个房间ID发给朋友，让他们加入游戏！`,
+            showCancel: false,
+            confirmText: '知道了'
+          });
+        } else {
+          alert(`房间创建成功！\n房间ID: ${room.id}\n请把这个房间ID发给朋友，让他们加入游戏！`);
+        }
+      }
     });
     
     this.networkManager.on('room_joined', () => {
@@ -284,20 +303,38 @@ export default class Main {
   }
   
   updateCanvasSize() {
-    // 获取屏幕尺寸
-    const screenWidth = window.innerWidth || 375;
-    const screenHeight = window.innerHeight || 667;
+    let screenWidth = 375;
+    let screenHeight = 667;
+    
+    if (typeof wx !== 'undefined') {
+      // 微信小游戏环境
+      try {
+        const systemInfo = wx.getSystemInfoSync();
+        screenWidth = systemInfo.windowWidth || 375;
+        screenHeight = systemInfo.windowHeight || 667;
+      } catch (error) {
+        console.error("获取微信系统信息失败:", error);
+      }
+    } else if (typeof window !== 'undefined') {
+      // 浏览器环境
+      screenWidth = window.innerWidth || 375;
+      screenHeight = window.innerHeight || 667;
+    }
     
     // 设置canvas尺寸
     this.canvas.width = screenWidth;
     this.canvas.height = screenHeight;
     
-    // 更新所有页面的画布尺寸
-    this.mainMenu.updateCanvasSize();
-    this.roomList.updateCanvasSize();
-    this.gameRoom.updateCanvasSize();
+    // 验证设置结果
+    if (this.canvas.width <= 1 || this.canvas.height <= 1) {
+      this.canvas.width = 375;
+      this.canvas.height = 667;
+    }
     
-    console.log(`画布尺寸更新: ${screenWidth}x${screenHeight}`);
+    // 更新所有页面的画布尺寸
+    if (this.mainMenu) this.mainMenu.updateCanvasSize();
+    if (this.roomList) this.roomList.updateCanvasSize();
+    if (this.gameRoom) this.gameRoom.updateCanvasSize();
   }
   
   startGameLoop() {
@@ -317,15 +354,11 @@ export default class Main {
   }
   
   render() {
-    // 清空画布
-    this.ctx.fillStyle = '#000000';
-    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-    
     if (this.isLoading) {
       this.renderLoadingScreen();
     } else if (this.currentPage) {
-      // 当前页面会自己处理渲染
-      // this.currentPage.render() 已经在各自的show()方法中调用
+      // 当前页面处理自己的渲染
+      this.currentPage.render();
     } else {
       this.renderErrorScreen();
     }
@@ -344,7 +377,7 @@ export default class Main {
     this.ctx.font = 'bold 28px Arial';
     this.ctx.textAlign = 'center';
     this.ctx.textBaseline = 'middle';
-    this.ctx.fillText('微信小游戏', centerX, centerY - 60);
+    this.ctx.fillText('连词成句', centerX, centerY - 60);
     
     // 绘制加载消息
     this.ctx.font = '16px Arial';

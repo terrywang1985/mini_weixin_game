@@ -2,16 +2,22 @@ package main
 
 import (
 	"context"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/protobuf/proto"
 	"log"
 	"log/slog"
 	pb "proto"
 	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/proto"
 )
 
 func (p *Player) HandleGetReadyRequest(msg *pb.Message) {
+
+	defer func() {
+		slog.Info("HandleGetReadyRequest completed", "playerId", p.Uid)
+	}()
+
 	var req pb.GetReadyRequest
 	if err := proto.Unmarshal(msg.GetData(), &req); err != nil {
 		slog.Error("Failed to parse GetReadyRequest Request", "error", err)

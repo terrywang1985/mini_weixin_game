@@ -60,16 +60,16 @@ class MainMenu {
             onClick: () => this.onCreateRoomClick()
         });
         
-        // 房间列表按钮
+        // 加入指定房间按钮
         this.buttons.push({
-            id: 'room_list',
-            text: '房间列表',
+            id: 'join_room',
+            text: '加入指定房间',
             x: centerX - this.config.buttonWidth / 2,
             y: centerY + this.config.buttonSpacing / 2,
             width: this.config.buttonWidth,
             height: this.config.buttonHeight,
             isHovered: false,
-            onClick: () => this.onRoomListClick()
+            onClick: () => this.onJoinRoomClick()
         });
     }
     
@@ -185,19 +185,20 @@ class MainMenu {
         this.ctx.textBaseline = 'middle';
         
         const titleY = this.canvas.height / 2 - 120;
-        this.ctx.fillText('微信小游戏', this.canvas.width / 2, titleY);
+        this.ctx.fillText('连词成句', this.canvas.width / 2, titleY);
     }
     
     drawUserInfo() {
-        const userInfo = GameStateManager.getUserInfo();
-        if (userInfo.nickname) {
-            this.ctx.fillStyle = this.config.textColor;
-            this.ctx.font = '16px Arial';
-            this.ctx.textAlign = 'center';
-            
-            const userY = this.canvas.height / 2 - 80;
-            this.ctx.fillText(`欢迎，${userInfo.nickname}`, this.canvas.width / 2, userY);
-        }
+        // 暂时隐藏用户昵称显示，因为昵称太长
+        // const userInfo = GameStateManager.getUserInfo();
+        // if (userInfo.nickname) {
+        //     this.ctx.fillStyle = this.config.textColor;
+        //     this.ctx.font = '16px Arial';
+        //     this.ctx.textAlign = 'center';
+        //     
+        //     const userY = this.canvas.height / 2 - 80;
+        //     this.ctx.fillText(`欢迎，${userInfo.nickname}`, this.canvas.width / 2, userY);
+        // }
     }
     
     drawButtons() {
@@ -263,28 +264,84 @@ class MainMenu {
         this.showCreateRoomDialog();
     }
     
-    onRoomListClick() {
-        console.log("点击房间列表");
+    
+    onJoinRoomClick() {
+        console.log("点击加入指定房间");
         
         if (!GameStateManager.isAuthenticated()) {
             this.showMessage("请先登录");
             return;
         }
         
-        // 请求房间列表
-        this.networkManager.getRoomList();
-        
-        // 切换到房间列表页面
-        GameStateManager.setGameState(GameStateManager.GAME_STATES.ROOM_LIST);
+        // 弹出输入框让用户输入房间ID
+        this.showJoinRoomDialog();
+    }
+    
+    showJoinRoomDialog() {
+        if (typeof wx !== 'undefined' && wx.showModal) {
+            // 微信小游戏环境
+            wx.showModal({
+                title: '加入房间',
+                content: '请输入朋友的房间号',
+                editable: true,
+                placeholderText: '输入房间号...',
+                success: (res) => {
+                    if (res.confirm && res.content) {
+                        const roomId = res.content.trim();
+                        if (roomId && /^\d+$/.test(roomId)) {
+                            console.log("加入房间:", roomId);
+                            this.networkManager.joinRoom(roomId);
+                        } else {
+                            wx.showToast({
+                                title: '请输入有效的房间号（纯数字）',
+                                icon: 'none',
+                                duration: 2000
+                            });
+                        }
+                    }
+                }
+            });
+        } else if (typeof prompt !== 'undefined') {
+            // 浏览器环境
+            const roomId = prompt("请输入朋友的房间号:", "");
+            
+            if (roomId && roomId.trim()) {
+                console.log("加入房间:", roomId.trim());
+                this.networkManager.joinRoom(roomId.trim());
+            }
+        } else {
+            this.showMessage("当前环境不支持输入房间号");
+        }
     }
     
     showCreateRoomDialog() {
-        // 简单的房间名称输入
-        const roomName = prompt("请输入房间名称:", "我的房间");
-        
-        if (roomName && roomName.trim()) {
-            console.log("创建房间:", roomName.trim());
-            this.networkManager.createRoom(roomName.trim());
+        if (typeof wx !== 'undefined' && wx.showModal) {
+            // 微信小游戏环境，直接创建房间
+            wx.showModal({
+                title: '创建房间',
+                content: '将使用您的用户ID作为房间号，是否继续？',
+                success: (res) => {
+                    if (res.confirm) {
+                        // 使用默认房间名，后端会使用玩家ID作为房间ID
+                        const defaultName = `我的房间`;
+                        console.log("创建房间:", defaultName);
+                        this.networkManager.createRoom(defaultName);
+                    }
+                }
+            });
+        } else if (typeof prompt !== 'undefined') {
+            // 浏览器环境
+            const roomName = prompt("请输入房间名称:", "我的房间");
+            
+            if (roomName && roomName.trim()) {
+                console.log("创建房间:", roomName.trim());
+                this.networkManager.createRoom(roomName.trim());
+            }
+        } else {
+            // 其他环境，使用默认名称
+            const defaultName = "我的房间";
+            console.log("创建房间:", defaultName);
+            this.networkManager.createRoom(defaultName);
         }
     }
     
