@@ -44,6 +44,7 @@ func (p *Player) HandleGetReadyRequest(msg *pb.Message) {
 
 	getReadyRpc := &pb.GetReadyRpcRequest{
 		PlayerId: p.Uid,
+		IsReady:  req.IsReady,
 	}
 
 	resp, err := client.GetReadyRpc(ctx, getReadyRpc)

@@ -160,15 +160,21 @@ class GameRoom {
         console.log("当前用户信息:", myUser);  // 添加调试信息
         
         if (myUser && this.playerSlots.length > 0) {
-            this.playerSlots[0].player = {
-                uid: myUser.uid,
-                nickname: myUser.nickname || '我',  // 修正：使用 nickname 字段
-                avatar: myUser.avatar_url || '',
-                is_ready: false
-            };
-            console.log("设置玩家槽位信息:", this.playerSlots[0].player);  // 添加调试信息
+            // 若服务器已经下发玩家数据，尽量不覆盖其 is_ready 状态
+            if (!this.playerSlots[0].player || this.playerSlots[0].player.uid !== myUser.uid) {
+                this.playerSlots[0].player = {
+                    uid: myUser.uid,
+                    nickname: myUser.nickname || '我',
+                    avatar: myUser.avatar_url || '',
+                    is_ready: this.isReady || false
+                };
+                console.log("设置玩家槽位信息(初始化):", this.playerSlots[0].player);
+            } else {
+                // 已存在时，仅确保 nickname 同步
+                this.playerSlots[0].player.nickname = myUser.nickname || this.playerSlots[0].player.nickname;
+                console.log("保留服务器ready状态:", this.playerSlots[0].player);
+            }
             this.myPlayerIndex = 0;
-            this.isReady = false;
         }
         
         this.render();
@@ -522,17 +528,8 @@ class GameRoom {
         }
         // 发送准备请求（服务器基于playerId处理准备状态，客户端不再直接切换IN_GAME）
         this.networkManager.sendReady(playerId);
-        // 本地先临时翻转显示（可选择等待服务器ROOM_STATE_NOTIFICATION再更新，这里保留即时反馈）
-        const newReadyState = !this.isReady;
-        this.isReady = newReadyState;
-        this.readyButton.text = this.isReady ? '取消准备' : '准备';
-        
-        // 更新自己的槽位状态
-        if (this.myPlayerIndex >= 0 && this.myPlayerIndex < this.playerSlots.length) {
-            this.playerSlots[this.myPlayerIndex].isReady = this.isReady;
-        }
-        
-        this.render();
+        // 不再本地翻转，等待服务器 RoomStateNotification / GameStartNotification 驱动更新
+        console.log('[GameRoom] 已发送准备请求，等待服务器广播状态');
     }
     
     onLeaveClick() {

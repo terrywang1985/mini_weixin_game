@@ -14,6 +14,8 @@ message RoomPlayer {
   // 在房间中的位置信息
   int32 position_x = 3;
   int32 position_y = 4;
+  // 玩家准备状态（新增，不影响旧客户端；旧客户端忽略 field=5 将继续显示未准备）
+  bool is_ready = 5;
 }
 
 message Room {
@@ -96,6 +98,7 @@ message LeaveRoomResponse {
 
 message GetReadyRequest {
   string playerId = 1;
+  bool is_ready = 2; // 玩家准备状态, true表示准备, false表示取消准备
 }
 
 message GetReadyResponse {

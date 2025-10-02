@@ -4,12 +4,13 @@ import (
 	"common/rpc"
 	"context"
 	"fmt"
-	"google.golang.org/grpc"
 	"log/slog"
 	"math/rand"
 	pb "proto"
 	"sync"
 	"time"
+
+	"google.golang.org/grpc"
 )
 
 type BattleRoom struct {
@@ -24,8 +25,8 @@ type BattleRoom struct {
 }
 
 type PlayerInfo struct {
-	PlayerID  uint64
-	Name      string
+	PlayerID uint64
+	Name     string
 	// 添加位置信息用于记录玩家在房间中的当前位置
 	PositionX int32
 	PositionY int32
@@ -60,11 +61,11 @@ func (room *BattleRoom) AddPlayer(playerID uint64, name string) {
 	defer room.PlayersMutex.Unlock()
 
 	room.Players[playerID] = &PlayerInfo{
-		PlayerID:               playerID,
-		Name:                   name,
+		PlayerID: playerID,
+		Name:     name,
 		// 设置初始位置为默认值
-		PositionX:              0,
-		PositionY:              0,
+		PositionX: 0,
+		PositionY: 0,
 		// 初始状态为未发送位置
 		HasSentInitialPosition: false,
 	}
@@ -92,23 +93,32 @@ func (room *BattleRoom) Stop() {
 	if room.Game != nil {
 		room.Game.EndGame()
 	}
-	
+
 	// 关闭命令通道（如果需要的话）
 	// close(room.CmdChan) // 注意：需要确保没有其他goroutine在写入
-	
+
 	slog.Info("Battle room stopped", "room_id", room.BattleID)
 }
 
-func (room *BattleRoom) SetPlayerReady(playerID uint64) {
+// SetPlayerReady 使用 presence 语义：
+//  - isReady=true  => 将玩家加入 ReadyPlayers（value 恒为 true）
+//  - isReady=false => 从 ReadyPlayers 删除该玩家
+// 这样 AllPlayersReady 只需比较 map 长度与玩家数即可，无需遍历。
+func (room *BattleRoom) SetPlayerReady(playerID uint64, isReady bool) {
 	room.PlayersMutex.Lock()
 	defer room.PlayersMutex.Unlock()
-	room.ReadyPlayers[playerID] = true
+	if isReady {
+		room.ReadyPlayers[playerID] = true
+	} else {
+		delete(room.ReadyPlayers, playerID)
+	}
 }
 
 func (room *BattleRoom) AllPlayersReady() bool {
 	room.PlayersMutex.RLock()
 	defer room.PlayersMutex.RUnlock()
-	return len(room.ReadyPlayers) == len(room.Players)
+	// 确保至少有一名玩家，并且准备人数与玩家总数相等
+	return len(room.Players) > 0 && len(room.ReadyPlayers) == len(room.Players)
 }
 
 func (room *BattleRoom) StartGame() {
@@ -124,6 +134,9 @@ func (room *BattleRoom) StartGame() {
 	// 初始化并开始游戏
 	room.Game.Init(players)
 	room.Game.Start()
+
+	// 清空准备状态，避免下局继承（若房间复用）
+	room.ReadyPlayers = make(map[uint64]bool)
 
 	// 广播游戏状态
 	room.BroadcastGameState()
@@ -160,26 +173,26 @@ func (room *BattleRoom) HandlePlayerCommand(cmd Command) {
 	// ===========================================
 	// Room层面处理：跨游戏状态的功能
 	// ===========================================
-	
+
 	switch cmd.Action.ActionType {
 	case pb.ActionType_CHAR_MOVE:
 		// 位置移动在Room层面处理（大厅、游戏中都需要）
 		room.handleCharMoveInRoom(cmd)
 		return
-		
-	// case pb.ActionType_AUTO_CHAT:
-	// 	// 聊天在Room层面处理（游戏前后都能聊天）
-	// 	room.handleChatInRoom(cmd)
-	// 	return
+
+		// case pb.ActionType_AUTO_CHAT:
+		// 	// 聊天在Room层面处理（游戏前后都能聊天）
+		// 	room.handleChatInRoom(cmd)
+		// 	return
 	}
-	
+
 	// ===========================================
 	// Game层面处理：游戏逻辑相关的功能
 	// ===========================================
-	
+
 	// 检查游戏是否已开始
 	if room.Game == nil {
-		slog.Warn("[Battle] Game not started yet, ignoring game action", 
+		slog.Warn("[Battle] Game not started yet, ignoring game action",
 			"action_type", cmd.Action.ActionType, "player_id", cmd.PlayerID)
 		return
 	}
@@ -194,7 +207,7 @@ func (room *BattleRoom) HandlePlayerCommand(cmd Command) {
 // handleCharMoveInRoom 在房间层面处理角色移动
 func (room *BattleRoom) handleCharMoveInRoom(cmd Command) {
 	slog.Info("[Battle] Handling CHAR_MOVE in room", "player_id", cmd.PlayerID, "room_id", room.BattleID)
-	
+
 	// 检查玩家是否在房间中
 	room.PlayersMutex.Lock()
 	playerInfo, exists := room.Players[cmd.PlayerID]
@@ -203,40 +216,40 @@ func (room *BattleRoom) handleCharMoveInRoom(cmd Command) {
 		slog.Error("[Battle] Player not in room", "player_id", cmd.PlayerID, "room_id", room.BattleID)
 		return
 	}
-	
+
 	moveAction := cmd.Action.GetCharMove()
 	if moveAction == nil {
 		room.PlayersMutex.Unlock()
 		slog.Error("[Battle] CharMove action is nil", "player_id", cmd.PlayerID)
 		return
 	}
-	
+
 	// 更新房间层面的玩家位置信息
 	isFirstPosition := !playerInfo.HasSentInitialPosition
 	playerInfo.PositionX = moveAction.ToX
 	playerInfo.PositionY = moveAction.ToY
-	
+
 	// 如果是第一次发送位置，标记为已发送
 	if isFirstPosition {
 		playerInfo.HasSentInitialPosition = true
-		slog.Info("[Battle] Player sent first position", "player_id", cmd.PlayerID, 
+		slog.Info("[Battle] Player sent first position", "player_id", cmd.PlayerID,
 			"pos_x", moveAction.ToX, "pos_y", moveAction.ToY)
 	}
-	
+
 	room.PlayersMutex.Unlock()
-	
-	slog.Info("[Battle] Player moved in room", "player_id", cmd.PlayerID, 
+
+	slog.Info("[Battle] Player moved in room", "player_id", cmd.PlayerID,
 		"from_x", moveAction.FromX, "from_y", moveAction.FromY, "to_x", moveAction.ToX, "to_y", moveAction.ToY)
-	
+
 	// 如果游戏已开始，同时更新游戏层面的位置状态
 	if room.Game != nil {
 		// 调用游戏层面的位置更新（更新游戏内玩家对象的位置）
 		room.Game.HandleAction(cmd.PlayerID, cmd.Action)
 	}
-	
+
 	// Room层面：广播位置更新给所有玩家
 	room.BroadcastPlayerPosition(cmd.PlayerID, moveAction)
-	
+
 	// 如果是第一次发送位置，记录日志
 	if isFirstPosition {
 		slog.Info("[Battle] Broadcasted first position to all players", "player_id", cmd.PlayerID)
@@ -332,13 +345,15 @@ func (room *BattleRoom) GetPlayerList() []*pb.RoomPlayer {
 	var players []*pb.RoomPlayer
 	room.PlayersMutex.RLock()
 	defer room.PlayersMutex.RUnlock()
-	
+
 	for id, info := range room.Players {
+		_, ready := room.ReadyPlayers[id]
 		players = append(players, &pb.RoomPlayer{
 			Uid:       id,
 			Name:      info.Name,
 			PositionX: info.PositionX,
 			PositionY: info.PositionY,
+			IsReady:   ready,
 		})
 	}
 	return players
@@ -346,9 +361,9 @@ func (room *BattleRoom) GetPlayerList() []*pb.RoomPlayer {
 
 // BroadcastPlayerPosition 广播玩家位置更新
 func (room *BattleRoom) BroadcastPlayerPosition(playerID uint64, moveAction *pb.CharacterMoveAction) {
-	slog.Info("Broadcasting player position update", "room_id", room.BattleID, "player_id", playerID, 
+	slog.Info("Broadcasting player position update", "room_id", room.BattleID, "player_id", playerID,
 		"from_x", moveAction.FromX, "from_y", moveAction.FromY, "to_x", moveAction.ToX, "to_y", moveAction.ToY)
-	
+
 	// 创建位置更新消息
 	positionUpdate := &pb.GameAction{
 		PlayerId:   playerID,
@@ -359,7 +374,7 @@ func (room *BattleRoom) BroadcastPlayerPosition(playerID uint64, moveAction *pb.
 	positionUpdate.ActionDetail = &pb.GameAction_CharMove{
 		CharMove: moveAction,
 	}
-	
+
 	// 向房间内所有玩家广播
 	for otherPlayerID := range room.Players {
 		room.NotifyPlayerPosition(otherPlayerID, positionUpdate)
@@ -375,11 +390,11 @@ func (room *BattleRoom) NotifyPlayerPosition(playerID uint64, positionUpdate *pb
 		return
 	}
 	defer conn.Close()
-	
+
 	client := pb.NewGameRpcServiceClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	
+
 	// 使用PlayerActionNotify消息格式发送位置更新
 	notify := &pb.PlayerActionNotify{
 		BeNotifiedUid: playerID,
@@ -387,7 +402,7 @@ func (room *BattleRoom) NotifyPlayerPosition(playerID uint64, positionUpdate *pb
 		PlayerId:      positionUpdate.PlayerId,
 		Action:        positionUpdate,
 	}
-	
+
 	_, err = client.PlayerActionNotifyRpc(ctx, notify)
 	if err != nil {
 		slog.Error("Failed to send position update notification", "player_id", playerID, "error", err)
@@ -399,13 +414,13 @@ func (room *BattleRoom) NotifyPlayerPosition(playerID uint64, positionUpdate *pb
 // NotifyGameStart 通知所有玩家游戏开始
 func (room *BattleRoom) NotifyGameStart() {
 	slog.Info("Notifying game start to all players", "room_id", room.BattleID)
-	
+
 	// 创建游戏开始通知
 	gameStartNotify := &pb.GameStartNotification{
 		RoomId:  room.BattleID,
 		Players: room.GetPlayerList(),
 	}
-	
+
 	// 通知房间内所有玩家
 	for playerID := range room.Players {
 		room.NotifyGameStartToPlayer(playerID, gameStartNotify)
@@ -421,17 +436,17 @@ func (room *BattleRoom) NotifyGameStartToPlayer(playerID uint64, gameStartNotify
 		return
 	}
 	defer conn.Close()
-	
+
 	client := pb.NewGameRpcServiceClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	
+
 	// 使用GameStartNotify消息格式发送游戏开始通知
 	notify := &pb.GameStartNotify{
 		BeNotifiedUid: playerID,
 		GameStart:     gameStartNotify,
 	}
-	
+
 	_, err = client.GameStartNotifyRpc(ctx, notify)
 	if err != nil {
 		slog.Error("Failed to send game start notification", "player_id", playerID, "error", err)
@@ -443,17 +458,17 @@ func (room *BattleRoom) NotifyGameStartToPlayer(playerID uint64, gameStartNotify
 // BroadcastInitialPositions 广播初始位置信息
 func (room *BattleRoom) BroadcastInitialPositions(newPlayerID uint64) {
 	slog.Info("Broadcasting initial positions", "room_id", room.BattleID, "new_player_id", newPlayerID)
-	
+
 	room.PlayersMutex.RLock()
 	defer room.PlayersMutex.RUnlock()
-	
+
 	// 只向新玩家发送所有现有玩家的位置
 	// 新玩家的位置等待他们主动发送第一个移动消息时再同步
 	for playerID, playerInfo := range room.Players {
 		if playerID == newPlayerID {
 			continue // 跳过新玩家自己
 		}
-		
+
 		// 创建位置消息
 		positionAction := &pb.CharacterMoveAction{
 			FromX: 0,
@@ -461,7 +476,7 @@ func (room *BattleRoom) BroadcastInitialPositions(newPlayerID uint64) {
 			ToX:   playerInfo.PositionX,
 			ToY:   playerInfo.PositionY,
 		}
-		
+
 		positionUpdate := &pb.GameAction{
 			PlayerId:   playerID,
 			ActionType: pb.ActionType_CHAR_MOVE,
@@ -470,14 +485,14 @@ func (room *BattleRoom) BroadcastInitialPositions(newPlayerID uint64) {
 				CharMove: positionAction,
 			},
 		}
-		
+
 		// 发送给新玩家
 		room.NotifyPlayerPosition(newPlayerID, positionUpdate)
-		slog.Debug("Sent existing player position to new player", 
-			"existing_player", playerID, "new_player", newPlayerID, 
+		slog.Debug("Sent existing player position to new player",
+			"existing_player", playerID, "new_player", newPlayerID,
 			"pos_x", playerInfo.PositionX, "pos_y", playerInfo.PositionY)
 	}
-	
-	slog.Info("Initial positions sent to new player", "new_player_id", newPlayerID, 
+
+	slog.Info("Initial positions sent to new player", "new_player_id", newPlayerID,
 		"existing_players_count", len(room.Players)-1)
 }

@@ -187,18 +187,21 @@ class ProtobufManager {
     }
     
     // 编码GetReadyRequest
-    encodeGetReadyRequest(playerId) {
-        // GetReadyRequest proto: string playerId = 1;
-        // field 1, wire type 2 (length-delimited)
+    encodeGetReadyRequest(playerId, isReady) {
+        // GetReadyRequest proto: string playerId = 1; bool is_ready = 2;
+        // field1: playerId (string, wt=2)
+        // field2: is_ready (bool, varint, wt=0)
         const fields = [];
         if (playerId !== undefined && playerId !== null) {
             const pidStr = String(playerId);
             const bytes = new TextEncoder().encode(pidStr);
-            const field1 = [];
-            field1.push(0x0A); // tag (field=1, wt=2)
-            field1.push(...this.encodeVarint(bytes.length));
-            field1.push(...bytes);
-            fields.push(...field1);
+            fields.push(0x0A); // field=1, wt=2
+            fields.push(...this.encodeVarint(bytes.length));
+            fields.push(...bytes);
+        }
+        if (isReady !== undefined && isReady !== null) {
+            fields.push(0x10); // field=2, wt=0 (tag = (2<<3)|0 = 16 = 0x10)
+            fields.push(isReady ? 1 : 0);
         }
         return new Uint8Array(fields);
     }
@@ -760,8 +763,9 @@ class ProtobufManager {
         let offset = 0;
         let uid = 0;
         let nickname = "";
-        let isReady = false;
-        let position = 0;
+    let posX = 0;
+    let posY = 0;
+    let isReady = false;
         
         while (offset < data.length) {
             const tag = data[offset];
@@ -783,17 +787,23 @@ class ProtobufManager {
                 offset += lengthResult.value;
                 console.log('玩家昵称:', nickname);
             } else if (fieldNumber === 3 && wireType === 0) {
-                // is_ready字段 (bool)
+                // position_x (int32)
+                const result = this.decodeVarint(data, offset);
+                posX = result.value;
+                offset = result.nextOffset;
+                console.log('玩家posX:', posX);
+            } else if (fieldNumber === 4 && wireType === 0) {
+                // position_y (int32)
+                const result = this.decodeVarint(data, offset);
+                posY = result.value;
+                offset = result.nextOffset;
+                console.log('玩家posY:', posY);
+            } else if (fieldNumber === 5 && wireType === 0) {
+                // is_ready (bool) 新增字段
                 const result = this.decodeVarint(data, offset);
                 isReady = result.value === 1;
                 offset = result.nextOffset;
                 console.log('玩家准备状态:', isReady);
-            } else if (fieldNumber === 4 && wireType === 0) {
-                // position字段 (int32)
-                const result = this.decodeVarint(data, offset);
-                position = result.value;
-                offset = result.nextOffset;
-                console.log('玩家位置:', position);
             } else {
                 // 跳过未知字段
                 if (wireType === 0) {
@@ -809,8 +819,9 @@ class ProtobufManager {
         return {
             uid: uid,
             nickname: nickname,
-            is_ready: isReady,
-            position: position
+            position_x: posX,
+            position_y: posY,
+            is_ready: isReady
         };
     }
     
@@ -880,10 +891,10 @@ class ProtobufManager {
         }
     }
     
-    // 创建准备请求 (传入 playerId)
-    createGetReadyRequest(playerId) {
+    // 创建准备请求 (传入 playerId, isReady)
+    createGetReadyRequest(playerId, isReady) {
         this.ensureInitialized();
-        const messageData = this.encodeGetReadyRequest(playerId);
+        const messageData = this.encodeGetReadyRequest(playerId, isReady);
         return this.createMessage(this.MESSAGE_IDS.GET_READY_REQUEST, messageData);
     }
     

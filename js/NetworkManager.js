@@ -418,11 +418,26 @@ class NetworkManager {
         this.sendWebSocketMessage(finalPacket);
     }
     
-    // 发送准备状态（传自己playerId即可，服务器内部翻转 or 标记准备）
+    // 发送准备状态：明确发送目标状态（幂等）。
+    // 逻辑：读取当前房间玩家列表中该玩家的 is_ready，然后发送 is_ready = !current。
     sendReady(playerId) {
         const pidStr = String(playerId);
-        console.log("发送准备请求 playerId:", pidStr);
-        const finalPacket = this.protobuf.createGetReadyRequest(pidStr);
+        // 从全局状态管理器里拿当前玩家列表（若可用）
+        let currentReady = false;
+        try {
+            if (typeof GameStateManager !== 'undefined') {
+                const room = GameStateManager.getCurrentRoom && GameStateManager.getCurrentRoom();
+                if (room && Array.isArray(room.playerList)) {
+                    const me = room.playerList.find(p => String(p.uid) === pidStr);
+                    if (me && typeof me.is_ready === 'boolean') currentReady = me.is_ready;
+                }
+            }
+        } catch (e) {
+            console.warn('[Network] 获取当前准备状态失败，按未准备处理', e);
+        }
+        const targetReady = !currentReady;
+        console.log("发送准备请求 playerId:", pidStr, "currentReady=", currentReady, "targetReady=", targetReady);
+        const finalPacket = this.protobuf.createGetReadyRequest(pidStr, targetReady);
         this.sendWebSocketMessage(finalPacket);
     }
     

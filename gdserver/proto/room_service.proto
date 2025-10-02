@@ -39,6 +39,7 @@ message LeaveRoomRpcResponse {
 
 message GetReadyRpcRequest {
   uint64 player_id = 2; // 玩家ID
+  bool is_ready = 1; // 玩家准备状态, true表示准备, false表示取消准备
 }
 message GetReadyRpcResponse {
   game.ErrorCode ret = 1;

@@ -191,7 +191,7 @@ func (s *BattleServer) JoinRoomRpc(ctx context.Context, req *pb.JoinRoomRpcReque
 
 	// 广播房间状态给所有玩家（包括新加入的玩家）
 	room.BroadcastRoomStatus()
-	
+
 	// 新增：广播玩家初始位置信息
 	room.BroadcastInitialPositions(req.Player.PlayerId)
 
@@ -234,13 +234,13 @@ func (s *BattleServer) LeaveRoomRpc(ctx context.Context, req *pb.LeaveRoomRpcReq
 	if roomExists {
 		// 从房间中移除玩家
 		room.RemovePlayer(req.PlayerId)
-		
+
 		// 向房间内剩余玩家广播房间状态更新
 		if len(room.Players) > 0 {
 			room.BroadcastRoomStatus()
 			slog.Info("Broadcasted room status after player left", "room_id", roomID, "remaining_players", len(room.Players))
 		}
-		
+
 		// 如果房间没有玩家了，删除房间
 		if len(room.Players) == 0 {
 			slog.Info("Room is empty, removing room", "room_id", roomID)
@@ -288,8 +288,12 @@ func (s *BattleServer) GetReadyRpc(ctx context.Context, req *pb.GetReadyRpcReque
 		return &pb.GetReadyRpcResponse{Ret: pb.ErrorCode_INVALID_ROOM}, nil
 	}
 
+	slog.Info("Player ready status change", "player_id", req.PlayerId, "is_ready", req.IsReady)
+
 	//设置状态
-	room.SetPlayerReady(req.PlayerId)
+	room.SetPlayerReady(req.PlayerId, req.IsReady)
+	//todo: 通知房间内所有玩家某个玩家准备状态变化 给game 发送 RoomDetailNotify
+	room.BroadcastRoomStatus()
 
 	//房间人数大于等于2人，且全部准备，开始游戏
 	if len(room.Players) >= 2 && room.AllPlayersReady() {
@@ -337,8 +341,8 @@ func (s *BattleServer) GetRoomListRpc(ctx context.Context, req *pb.GetRoomListRp
 		// 创建房间信息
 		roomInfo := &pb.Room{
 			Id:             roomID,
-			Name:           "Battle Room", // 可以根据需要修改房间名称
-			MaxPlayers:     4,             // 最大玩家数，可以根据需要调整
+			Name:           "Battle Room",            // 可以根据需要修改房间名称
+			MaxPlayers:     4,                        // 最大玩家数，可以根据需要调整
 			CurrentPlayers: int32(len(room.Players)), // 当前玩家数
 		}
 		rooms = append(rooms, roomInfo)
