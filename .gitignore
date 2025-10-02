@@ -1,4 +1,7 @@
 # 依赖项目录 - npm 或 yarn 安装的包
+gdserver/server/bin/*.exe*
+gdserver/server/src/servers/*.exe
+
 node_modules/
 .pnp/
 .pnp.js
@@ -46,4 +49,3 @@ out/
 /gdserver/tools/code/
 gdserver/tools/code/*
 
-gdserver/server/bin/*.exe*

@@ -64,8 +64,19 @@ class GameRoom {
             // TODO: 处理卡牌选择逻辑
         });
         
+        // 设置出牌回调
+        this.handCardArea.onCardPlayed = (cardIndex, card) => {
+            this.onPlayCard(cardIndex, card);
+        };
+        
         // 游戏状态
         this.gameStarted = false;
+        
+        // 桌面卡牌区域
+        this.tableCards = [];
+        this.tableArea = {
+            x: 0, y: 0, width: 400, height: 200
+        };
         
         this.leaveButton = {
             x: 0, y: 0, width: 0, height: 0,
@@ -307,7 +318,20 @@ class GameRoom {
     }
     
     handleClick(x, y) {
-        // 检查按钮点击
+        if (!this.isVisible) return;
+        
+        // 游戏状态下的点击处理
+        if (this.gameStarted) {
+            // 检查弃牌认输按钮
+            if (this.gameExitButton && this.isPointInButton(x, y, this.gameExitButton)) {
+                this.onSurrenderClick();
+                return;
+            }
+            // 其他游戏内点击事件交给手牌区处理
+            return;
+        }
+        
+        // 房间状态下的点击处理
         if (this.isPointInButton(x, y, this.readyButton)) {
             this.onReadyClick();
         } else if (this.isPointInButton(x, y, this.leaveButton)) {
@@ -561,6 +585,88 @@ class GameRoom {
         console.log('[GameRoom] 已发送准备请求，等待服务器广播状态');
     }
     
+    // 弃牌认输点击处理
+    onSurrenderClick() {
+        console.log("点击弃牌认输");
+        
+        let shouldSurrender = false;
+        
+        // 显示确认对话框
+        if (typeof wx !== 'undefined') {
+            wx.showModal({
+                title: '弃牌认输',
+                content: '确定要弃牌认输吗？这将结束游戏。',
+                success: (res) => {
+                    if (res.confirm) {
+                        this.sendSurrenderRequest();
+                    }
+                }
+            });
+        } else {
+            shouldSurrender = confirm('确定要弃牌认输吗？这将结束游戏。');
+        }
+        
+        if (shouldSurrender) {
+            this.sendSurrenderRequest();
+        }
+    }
+    
+    // 发送认输请求
+    sendSurrenderRequest() {
+        console.log("发送认输请求");
+        // TODO: 发送认输消息到服务器
+        // this.networkManager.sendSurrenderMessage();
+        
+        // 临时处理：直接退出房间
+        this.leaveRoom();
+    }
+    
+    // 处理出牌
+    onPlayCard(cardIndex, card) {
+        console.log(`[GameRoom] 出牌: 索引=${cardIndex}, 卡牌=${card.word}`);
+        
+        // 发送出牌消息到服务器
+        this.sendPlayCardMessage(cardIndex, card);
+    }
+    
+    // 发送出牌消息
+    sendPlayCardMessage(cardIndex, card) {
+        if (!this.networkManager) {
+            console.error("NetworkManager未初始化");
+            return;
+        }
+        
+        // 创建出牌动作
+        const placeCardAction = {
+            cardId: cardIndex,
+            targetIndex: this.tableCards.length, // 暂时添加到桌面末尾
+            word: card.word,
+            wordClass: card.wordClass
+        };
+        
+        console.log(`[GameRoom] 发送出牌消息:`, placeCardAction);
+        
+        // TODO: 通过NetworkManager发送PLACE_CARD动作
+        // this.networkManager.sendGameAction({
+        //     actionType: 'PLACE_CARD',
+        //     actionDetail: placeCardAction
+        // });
+        
+        // 临时：直接添加到本地桌面（等待服务器响应时应该从服务器状态更新）
+        this.addCardToTable(card);
+    }
+    
+    // 添加卡牌到桌面
+    addCardToTable(card) {
+        this.tableCards.push(card);
+        console.log(`[GameRoom] 桌面卡牌数量: ${this.tableCards.length}`);
+        
+        // 注意：手牌的移除应该由服务器状态更新来处理，而不是在这里直接修改
+        // 这里只是临时的本地显示更新
+        
+        this.render();
+    }
+
     onLeaveClick() {
         console.log("点击离开房间");
         
@@ -681,13 +787,14 @@ class GameRoom {
         this.ctx.fillText('参与玩家:', centerX, centerY - 20);
         
         // 显示玩家名单
-        const players = GameStateManager.currentRoom.playerList;
+        const players = this.players || [];
         let yOffset = centerY + 10;
         
         players.forEach((player, index) => {
             this.ctx.font = '14px Arial';
-            this.ctx.fillStyle = player.uid === GameStateManager.userInfo.uid ? '#4CAF50' : '#666';
-            const playerText = `${index + 1}. ${player.nickname || 'Unknown'}`;
+            const userInfo = GameStateManager.getUserInfo();
+            this.ctx.fillStyle = player.uid === userInfo.uid ? '#4CAF50' : '#666';
+            const playerText = `${index + 1}. ${player.name || player.nickname || 'Unknown'}`;
             this.ctx.fillText(playerText, centerX, yOffset);
             yOffset += 25;
         });
@@ -697,16 +804,110 @@ class GameRoom {
         this.ctx.fillStyle = '#999';
         this.ctx.fillText('等待游戏服务器响应...', centerX, centerY + 150);
         
+        // 绘制桌面卡牌
+        this.drawTableCards();
+        
         // 可以添加退出游戏按钮
         this.drawGameExitButton();
     }
     
-    // 绘制退出游戏按钮
+    // 绘制桌面卡牌
+    drawTableCards() {
+        if (this.tableCards.length === 0) {
+            // 绘制空桌面
+            const centerX = this.canvas.width / 2;
+            const centerY = this.canvas.height / 2 - 50;
+            
+            this.ctx.strokeStyle = '#666';
+            this.ctx.lineWidth = 2;
+            this.ctx.setLineDash([5, 5]);
+            this.ctx.strokeRect(centerX - 200, centerY - 50, 400, 100);
+            this.ctx.setLineDash([]);
+            
+            this.ctx.fillStyle = '#666';
+            this.ctx.font = '16px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillText('桌面 - 暂无卡牌', centerX, centerY);
+            return;
+        }
+        
+        // 计算桌面区域
+        const centerX = this.canvas.width / 2;
+        const centerY = this.canvas.height / 2 - 50;
+        this.tableArea.x = centerX - this.tableArea.width / 2;
+        this.tableArea.y = centerY - this.tableArea.height / 2;
+        
+        // 绘制桌面背景
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+        this.ctx.fillRect(this.tableArea.x, this.tableArea.y, this.tableArea.width, this.tableArea.height);
+        
+        this.ctx.strokeStyle = '#ccc';
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(this.tableArea.x, this.tableArea.y, this.tableArea.width, this.tableArea.height);
+        
+        // 绘制桌面标题
+        this.ctx.fillStyle = '#fff';
+        this.ctx.font = '16px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'top';
+        this.ctx.fillText('桌面', this.tableArea.x + this.tableArea.width / 2, this.tableArea.y + 5);
+        
+        // 绘制桌面卡牌
+        const cardWidth = 50;
+        const cardHeight = 30;
+        const cardSpacing = 5;
+        const startX = this.tableArea.x + 10;
+        const startY = this.tableArea.y + 30;
+        
+        this.tableCards.forEach((card, index) => {
+            const cardX = startX + (index % 7) * (cardWidth + cardSpacing);
+            const cardY = startY + Math.floor(index / 7) * (cardHeight + cardSpacing);
+            
+            // 绘制卡牌背景
+            this.ctx.fillStyle = '#4CAF50';
+            this.ctx.fillRect(cardX, cardY, cardWidth, cardHeight);
+            
+            // 绘制卡牌边框
+            this.ctx.strokeStyle = '#2e7d32';
+            this.ctx.lineWidth = 1;
+            this.ctx.strokeRect(cardX, cardY, cardWidth, cardHeight);
+            
+            // 绘制卡牌文字
+            this.ctx.fillStyle = '#fff';
+            this.ctx.font = '12px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillText(card.word, cardX + cardWidth / 2, cardY + cardHeight / 2);
+        });
+        
+        // 绘制当前句子
+        if (this.tableCards.length > 0) {
+            const sentence = this.tableCards.map(card => card.word).join('');
+            this.ctx.fillStyle = '#fff';
+            this.ctx.font = '18px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText(`当前句子: ${sentence}`, 
+                this.tableArea.x + this.tableArea.width / 2, 
+                this.tableArea.y + this.tableArea.height - 20);
+        }
+    }
+
+    // 绘制弃牌认输按钮
     drawGameExitButton() {
         const buttonWidth = 120;
         const buttonHeight = 40;
         const buttonX = this.canvas.width / 2 - buttonWidth / 2;
-        const buttonY = this.canvas.height - 100;
+        // 上移到手牌区上方，避免遮挡
+        const buttonY = this.canvas.height - 200;
+        
+        // 保存按钮位置信息供点击检测使用
+        this.gameExitButton = {
+            x: buttonX,
+            y: buttonY,
+            width: buttonWidth,
+            height: buttonHeight
+        };
         
         this.ctx.fillStyle = '#ff4444';
         this.ctx.fillRect(buttonX, buttonY, buttonWidth, buttonHeight);
@@ -716,10 +917,10 @@ class GameRoom {
         this.ctx.strokeRect(buttonX, buttonY, buttonWidth, buttonHeight);
         
         this.ctx.fillStyle = '#ffffff';
-        this.ctx.font = '16px Arial';
+        this.ctx.font = '14px Arial';
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
-        this.ctx.fillText('退出游戏', buttonX + buttonWidth / 2, buttonY + buttonHeight / 2);
+        this.ctx.fillText('弃牌认输', buttonX + buttonWidth / 2, buttonY + buttonHeight / 2);
     }
     
     // 销毁页面
@@ -730,98 +931,31 @@ class GameRoom {
         }
     }
 
-    // 绘制游戏界面
-    drawGameScreen() {
-        // 绘制游戏背景
-        this.ctx.fillStyle = '#1a252f';
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-        
-        // 绘制游戏标题
-        this.ctx.fillStyle = this.config.textColor;
-        this.ctx.font = 'bold 24px Arial';
-        this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'top';
-        this.ctx.fillText('卡牌游戏进行中', this.canvas.width / 2, 20);
-        
-        // 绘制回合信息
-        const currentTurn = GameStateManager.getCurrentTurn();
-        const isMyTurn = GameStateManager.isMyTurn();
-        
-        this.ctx.font = '18px Arial';
-        this.ctx.fillStyle = isMyTurn ? '#4CAF50' : '#FFC107';
-        this.ctx.fillText(
-            isMyTurn ? '轮到你了！' : `等待其他玩家...`,
-            this.canvas.width / 2,
-            60
-        );
-        
-        // 绘制卡牌桌面区域（中间区域）
-        this.drawCardTable();
-        
-        // 其他游戏界面元素...
-        this.drawGameExitButton();
-    }
-
-    // 绘制卡牌桌面
-    drawCardTable() {
-        const cardTable = GameStateManager.getCardTable();
-        if (!cardTable) return;
-
-        const tableX = this.canvas.width / 2 - 200;
-        const tableY = 120;
-        const tableWidth = 400;
-        const tableHeight = 150;
-
-        // 绘制桌面背景
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-        this.ctx.fillRect(tableX, tableY, tableWidth, tableHeight);
-        
-        this.ctx.strokeStyle = '#555';
-        this.ctx.lineWidth = 2;
-        this.ctx.strokeRect(tableX, tableY, tableWidth, tableHeight);
-
-        // 绘制桌面标题
-        this.ctx.fillStyle = this.config.textColor;
-        this.ctx.font = '16px Arial';
-        this.ctx.textAlign = 'left';
-        this.ctx.textBaseline = 'top';
-        this.ctx.fillText('桌面', tableX + 10, tableY + 10);
-
-        // 绘制句子
-        if (cardTable.sentence) {
-            this.ctx.font = '20px Arial';
-            this.ctx.textAlign = 'center';
-            this.ctx.fillText(cardTable.sentence, tableX + tableWidth / 2, tableY + 60);
-        }
-
-        // 绘制桌面卡牌数量
-        if (cardTable.cards && cardTable.cards.length > 0) {
-            this.ctx.font = '14px Arial';
-            this.ctx.textAlign = 'center';
-            this.ctx.fillStyle = '#aaa';
-            this.ctx.fillText(
-                `桌面卡牌: ${cardTable.cards.length} 张`,
-                tableX + tableWidth / 2,
-                tableY + tableHeight - 20
-            );
-        }
-    }
-
     // 处理游戏状态更新
     onGameStateUpdate(gameStateData) {
-        console.log('[GameRoom] 收到游戏状态更新:', gameStateData);
+        // 这个方法由GameStateManager的updateGameState触发
+        // 不需要再调用updateGameState，只需要更新UI
         
-        // 更新手牌
-        if (gameStateData.handCards && gameStateData.handCards.length > 0) {
-            this.handCardArea.setHandCards(gameStateData.handCards);
+        // 获取我的手牌
+        const myHandCards = GameStateManager.getMyHandCards();
+        
+        // 更新手牌显示
+        if (myHandCards && myHandCards.length > 0) {
+            this.handCardArea.setHandCards(myHandCards);
             this.handCardArea.show();
-            console.log(`[GameRoom] 更新手牌: ${gameStateData.handCards.length} 张`);
+            console.log(`[GameRoom] 手牌更新: ${myHandCards.length} 张`);
+        }
+        
+        // 更新桌面卡牌（从传入的数据中获取）
+        if (gameStateData.gameState && gameStateData.gameState.cardTable && gameStateData.gameState.cardTable.cards) {
+            this.tableCards = [...gameStateData.gameState.cardTable.cards];
+            console.log(`[GameRoom] 桌面卡牌更新: ${this.tableCards.length} 张`);
         }
         
         // 标记游戏已开始
         if (!this.gameStarted) {
             this.gameStarted = true;
-            console.log('[GameRoom] 游戏已开始，显示手牌区域');
+            console.log('[GameRoom] 游戏开始，显示手牌');
         }
         
         // 重新渲染界面

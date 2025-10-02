@@ -30,6 +30,20 @@ class HandCardArea {
         this.areaRect = { x: 0, y: 0, width: 0, height: 0 };
         this.cardRects = [];
         
+        // 出牌按钮配置
+        this.playButton = {
+            x: 0, y: 0, width: 80, height: 35,
+            visible: false,
+            hovered: false
+        };
+        
+        // 出牌按钮配置
+        this.playButton = {
+            x: 0, y: 0, width: 80, height: 35,
+            visible: false,
+            hovered: false
+        };
+        
         // 绑定事件
         this.boundHandleClick = this.handleClick.bind(this);
         this.boundHandleMouseMove = this.handleMouseMove.bind(this);
@@ -81,6 +95,11 @@ class HandCardArea {
                 index: i
             });
         }
+        
+        // 计算出牌按钮位置（在手牌区右侧）
+        this.playButton.x = this.areaRect.x + this.areaRect.width - this.playButton.width - 10;
+        this.playButton.y = this.areaRect.y + this.areaRect.height - this.playButton.height - 5;
+        this.playButton.visible = this.selectedCardIndex >= 0;
     }
     
     // 渲染手牌区域
@@ -107,8 +126,42 @@ class HandCardArea {
         this.handCards.forEach((card, index) => {
             this.drawCard(card, index);
         });
+        
+        // 绘制出牌按钮
+        if (this.playButton.visible) {
+            this.drawPlayButton();
+        }
     }
     
+    // 绘制出牌按钮
+    drawPlayButton() {
+        if (!this.playButton.visible) return;
+        
+        const btn = this.playButton;
+        
+        // 按钮背景色
+        let bgColor = '#4CAF50';
+        if (btn.hovered) {
+            bgColor = '#45a049';
+        }
+        
+        // 绘制按钮背景
+        this.ctx.fillStyle = bgColor;
+        this.ctx.fillRect(btn.x, btn.y, btn.width, btn.height);
+        
+        // 绘制按钮边框
+        this.ctx.strokeStyle = '#2e7d32';
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(btn.x, btn.y, btn.width, btn.height);
+        
+        // 绘制按钮文字
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.font = '14px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText('出牌', btn.x + btn.width / 2, btn.y + btn.height / 2);
+    }
+
     // 绘制单张卡牌
     drawCard(card, index) {
         const rect = this.cardRects[index];
@@ -202,6 +255,14 @@ class HandCardArea {
         const x = event.clientX - rect.left;
         const y = event.clientY - rect.top;
         
+        // 检查是否点击了出牌按钮
+        if (this.playButton.visible && 
+            x >= this.playButton.x && x <= this.playButton.x + this.playButton.width &&
+            y >= this.playButton.y && y <= this.playButton.y + this.playButton.height) {
+            this.onPlayCard();
+            return;
+        }
+        
         // 检查是否点击了某张卡牌
         for (let i = 0; i < this.cardRects.length; i++) {
             const cardRect = this.cardRects[i];
@@ -245,6 +306,9 @@ class HandCardArea {
         const previousSelected = this.selectedCardIndex;
         this.selectedCardIndex = index;
         
+        // 更新出牌按钮可见性（不重新计算布局）
+        this.playButton.visible = true;
+        
         console.log(`[HandCardArea] 选择卡牌: ${index} - ${this.handCards[index].word}`);
         
         // 触发卡牌选择事件
@@ -265,6 +329,24 @@ class HandCardArea {
     // 清除选择
     clearSelection() {
         this.selectedCardIndex = -1;
+        this.playButton.visible = false;
+        // 不重新计算布局，避免循环调用
+    }
+    
+    // 出牌按钮点击处理
+    onPlayCard() {
+        if (this.selectedCardIndex >= 0 && this.selectedCardIndex < this.handCards.length) {
+            const selectedCard = this.handCards[this.selectedCardIndex];
+            console.log(`[HandCardArea] 出牌: ${selectedCard.word}`);
+            
+            // 触发出牌事件
+            if (this.onCardPlayed) {
+                this.onCardPlayed(this.selectedCardIndex, selectedCard);
+            }
+            
+            // 清除选择
+            this.clearSelection();
+        }
     }
     
     // 显示手牌区域
