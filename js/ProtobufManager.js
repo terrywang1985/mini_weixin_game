@@ -187,20 +187,19 @@ class ProtobufManager {
     }
     
     // 编码GetReadyRequest
-    encodeGetReadyRequest(isReady) {
-        // GetReadyRequest 消息结构:
-        // 1: is_ready (bool)
-        
+    encodeGetReadyRequest(playerId) {
+        // GetReadyRequest proto: string playerId = 1;
+        // field 1, wire type 2 (length-delimited)
         const fields = [];
-        
-        // 编码准备状态 (field 1, bool)
-        if (isReady) {
+        if (playerId !== undefined && playerId !== null) {
+            const pidStr = String(playerId);
+            const bytes = new TextEncoder().encode(pidStr);
             const field1 = [];
-            field1.push(0x08); // field 1, wire type 0 (varint)
-            field1.push(0x01); // true = 1
+            field1.push(0x0A); // tag (field=1, wt=2)
+            field1.push(...this.encodeVarint(bytes.length));
+            field1.push(...bytes);
             fields.push(...field1);
         }
-        
         return new Uint8Array(fields);
     }
     
@@ -881,11 +880,10 @@ class ProtobufManager {
         }
     }
     
-    // 创建准备请求
-    createGetReadyRequest(isReady) {
+    // 创建准备请求 (传入 playerId)
+    createGetReadyRequest(playerId) {
         this.ensureInitialized();
-        
-        const messageData = this.encodeGetReadyRequest(isReady);
+        const messageData = this.encodeGetReadyRequest(playerId);
         return this.createMessage(this.MESSAGE_IDS.GET_READY_REQUEST, messageData);
     }
     
@@ -998,12 +996,87 @@ class ProtobufManager {
     
     // 解析游戏开始通知
     parseGameStartNotification(data) {
-        return {
-            ret: 0,
-            game_id: "",
-            players: [],
-            start_time: 0
-        };
+        console.log("解析游戏开始通知数据，长度:", data ? data.length : null);
+        
+        if (!data || data.length === 0) {
+            console.log("游戏开始通知数据为空，返回默认结构");
+            return {
+                ret: 0,
+                room_id: "",
+                players: [],
+                start_time: 0
+            };
+        }
+        
+        try {
+            let offset = 0;
+            let room_id = "";
+            let players = [];
+            
+            while (offset < data.length) {
+                // 解析tag
+                const tagResult = this.decodeVarint(data, offset);
+                const tag = tagResult.value;
+                offset = tagResult.nextOffset;
+                
+                const fieldNumber = tag >> 3;
+                const wireType = tag & 7;
+                
+                console.log(`解析游戏开始通知字段 ${fieldNumber}, wire_type=${wireType}, offset=${offset}`);
+                
+                switch (fieldNumber) {
+                    case 1: // room_id
+                        if (wireType === 2) {
+                            const lengthResult = this.decodeVarint(data, offset);
+                            offset = lengthResult.nextOffset;
+                            room_id = this.decodeString(data, offset, lengthResult.value);
+                            offset += lengthResult.value;
+                            console.log("游戏开始通知room_id:", room_id);
+                        }
+                        break;
+                    case 2: // players (repeated RoomPlayer)
+                        if (wireType === 2) {
+                            const lengthResult = this.decodeVarint(data, offset);
+                            offset = lengthResult.nextOffset;
+                            // 解析单个RoomPlayer
+                            const playerData = data.slice(offset, offset + lengthResult.value);
+                            const player = this.parseRoomPlayer(playerData);
+                            if (player) {
+                                players.push(player);
+                                console.log("游戏开始通知玩家:", player);
+                            }
+                            offset += lengthResult.value;
+                        }
+                        break;
+                    default:
+                        console.log(`跳过游戏开始通知未知字段 ${fieldNumber}`);
+                        // 跳过未知字段
+                        if (wireType === 0) {
+                            const valueResult = this.decodeVarint(data, offset);
+                            offset = valueResult.nextOffset;
+                        } else if (wireType === 2) {
+                            const lengthResult = this.decodeVarint(data, offset);
+                            offset = lengthResult.nextOffset + lengthResult.value;
+                        }
+                        break;
+                }
+            }
+            
+            return {
+                ret: 0,
+                room_id,
+                players,
+                start_time: 0
+            };
+        } catch (error) {
+            console.error("解析游戏开始通知失败:", error);
+            return {
+                ret: 0,
+                room_id: "",
+                players: [],
+                start_time: 0
+            };
+        }
     }
 }
 

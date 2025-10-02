@@ -108,6 +108,11 @@ class GameStateManager {
     
     // 设置游戏状态
     setGameState(newState) {
+        if (this.currentState === newState) {
+            // 避免重复广播
+            console.log("[GameStateManager] 忽略重复状态设置:", newState);
+            return;
+        }
         const oldState = this.currentState;
         this.currentState = newState;
         console.log(`游戏状态变化: ${oldState} -> ${newState}`);

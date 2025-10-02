@@ -63,7 +63,7 @@ class GameRoom {
     init() {
         // 监听游戏状态变化
         GameStateManager.onStateChange((oldState, newState) => {
-            if (newState === GameStateManager.GAME_STATES.IN_ROOM) {
+            if (newState === GameStateManager.GAME_STATES.IN_ROOM || newState === GameStateManager.GAME_STATES.IN_GAME) {
                 this.show();
             } else {
                 this.hide();
@@ -146,7 +146,13 @@ class GameRoom {
     }
     
     show() {
-        this.isVisible = true;
+        if (this.isVisible) {
+            // 避免重复 show 造成不必要的重新布局频繁触发
+            // 但仍可选择刷新渲染
+            //console.log('[GameRoom] show() 被重复调用');
+        } else {
+            this.isVisible = true;
+        }
         this.setupLayout();
         
         // 确保当前玩家显示在第一个位置
@@ -170,6 +176,11 @@ class GameRoom {
     }
     
     hide() {
+        // 如果已经在 IN_GAME 状态，不允许外部把界面隐藏（防止错误屏）
+        if (GameStateManager.currentState === GameStateManager.GAME_STATES.IN_GAME) {
+            console.warn('[GameRoom] 处于 IN_GAME，忽略 hide() 调用');
+            return;
+        }
         this.isVisible = false;
         console.log("隐藏游戏房间");
     }
@@ -346,14 +357,18 @@ class GameRoom {
         this.ctx.fillStyle = this.config.backgroundColor;
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         
-        // 绘制标题
-        this.drawTitle();
+        // 检查游戏状态
+        const currentState = GameStateManager.currentState;
         
-        // 绘制玩家位置格子
-        this.drawPlayerSlots();
-        
-        // 绘制按钮
-        this.drawButtons();
+        if (currentState === GameStateManager.GAME_STATES.IN_GAME) {
+            // 游戏中界面
+            this.drawGameScreen();
+        } else {
+            // 房间准备界面
+            this.drawTitle();
+            this.drawPlayerSlots();
+            this.drawButtons();
+        }
     }
     
     drawTitle() {
@@ -499,12 +514,16 @@ class GameRoom {
     
     onReadyClick() {
         console.log("点击准备按钮");
-        
-        // 发送准备状态到服务器
+        const currentUser = GameStateManager.getUserInfo();
+        const playerId = currentUser?.uid;
+        if (!playerId) {
+            console.warn('当前用户ID不存在，无法发送准备');
+            return;
+        }
+        // 发送准备请求（服务器基于playerId处理准备状态，客户端不再直接切换IN_GAME）
+        this.networkManager.sendReady(playerId);
+        // 本地先临时翻转显示（可选择等待服务器ROOM_STATE_NOTIFICATION再更新，这里保留即时反馈）
         const newReadyState = !this.isReady;
-        this.networkManager.sendReady(newReadyState);
-        
-        // 更新本地状态（等待服务器确认）
         this.isReady = newReadyState;
         this.readyButton.text = this.isReady ? '取消准备' : '准备';
         
@@ -582,8 +601,26 @@ class GameRoom {
     }
     
     onGameStart(data) {
-        console.log("游戏开始:", data);
-        GameStateManager.startGame();
+        // 服务器广播的正式开始事件
+        console.log("[GameRoom] 收到 game_start_notification (服务器确认) :", data);
+        if (data) {
+            if (!this.roomId && data.room_id) {
+                this.roomId = data.room_id;
+                console.log('[GameRoom] 根据通知设置 roomId:', this.roomId);
+            }
+            // 如果通知带玩家列表，更新本地 players（不直接覆盖 GameStateManager.currentRoom.playerList，保持来源一致）
+            if (data.players && data.players.length > 0) {
+                this.players = data.players;
+                console.log('[GameRoom] 通知玩家人数:', data.players.length);
+            }
+        }
+        // 确保当前显示页面仍然是房间界面，渲染逻辑会根据IN_GAME状态显示战斗界面
+        if (GameStateManager.currentState === GameStateManager.GAME_STATES.IN_GAME) {
+            this.show(); // 再次调用show以防被其他逻辑 hide
+            this.render();
+        } else {
+            console.warn('[GameRoom] 收到开始通知但当前状态不是 IN_GAME:', GameStateManager.currentState);
+        }
     }
     
     // 更新画布尺寸
@@ -592,6 +629,71 @@ class GameRoom {
             this.setupLayout();
             this.render();
         }
+    }
+    
+    // 绘制游戏中界面
+    drawGameScreen() {
+        // 绘制游戏标题
+        this.ctx.fillStyle = this.config.textColor;
+        this.ctx.font = 'bold 24px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        
+        const centerX = this.canvas.width / 2;
+        const centerY = this.canvas.height / 2;
+        
+        this.ctx.fillText('游戏进行中', centerX, centerY - 100);
+        
+        // 显示房间信息
+        this.ctx.font = '18px Arial';
+        this.ctx.fillStyle = '#666';
+        this.ctx.fillText(`房间: ${this.roomInfo ? this.roomInfo.name : this.roomId}`, centerX, centerY - 60);
+        
+        // 显示玩家列表
+        this.ctx.font = '16px Arial';
+        this.ctx.fillStyle = this.config.textColor;
+        this.ctx.fillText('参与玩家:', centerX, centerY - 20);
+        
+        // 显示玩家名单
+        const players = GameStateManager.currentRoom.playerList;
+        let yOffset = centerY + 10;
+        
+        players.forEach((player, index) => {
+            this.ctx.font = '14px Arial';
+            this.ctx.fillStyle = player.uid === GameStateManager.userInfo.uid ? '#4CAF50' : '#666';
+            const playerText = `${index + 1}. ${player.nickname || 'Unknown'}`;
+            this.ctx.fillText(playerText, centerX, yOffset);
+            yOffset += 25;
+        });
+        
+        // 绘制游戏提示
+        this.ctx.font = '16px Arial';
+        this.ctx.fillStyle = '#999';
+        this.ctx.fillText('等待游戏服务器响应...', centerX, centerY + 150);
+        
+        // 可以添加退出游戏按钮
+        this.drawGameExitButton();
+    }
+    
+    // 绘制退出游戏按钮
+    drawGameExitButton() {
+        const buttonWidth = 120;
+        const buttonHeight = 40;
+        const buttonX = this.canvas.width / 2 - buttonWidth / 2;
+        const buttonY = this.canvas.height - 100;
+        
+        this.ctx.fillStyle = '#ff4444';
+        this.ctx.fillRect(buttonX, buttonY, buttonWidth, buttonHeight);
+        
+        this.ctx.strokeStyle = '#cc0000';
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(buttonX, buttonY, buttonWidth, buttonHeight);
+        
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.font = '16px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText('退出游戏', buttonX + buttonWidth / 2, buttonY + buttonHeight / 2);
     }
     
     // 销毁页面

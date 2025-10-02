@@ -418,10 +418,11 @@ class NetworkManager {
         this.sendWebSocketMessage(finalPacket);
     }
     
-    // 发送准备状态
-    sendReady(isReady) {
-        console.log("发送准备状态:", isReady);
-        const finalPacket = this.protobuf.createGetReadyRequest(isReady);
+    // 发送准备状态（传自己playerId即可，服务器内部翻转 or 标记准备）
+    sendReady(playerId) {
+        const pidStr = String(playerId);
+        console.log("发送准备请求 playerId:", pidStr);
+        const finalPacket = this.protobuf.createGetReadyRequest(pidStr);
         this.sendWebSocketMessage(finalPacket);
     }
     
@@ -444,9 +445,9 @@ class NetworkManager {
             console.log("无法发送准备请求: 当前没有在任何房间中");
             return;
         }
-        
-        console.log("发送准备请求:", this.userUid);
-        const finalPacket = this.protobuf.createGetReadyRequest(this.userUid);
+        const pidStr = String(this.userUid);
+        console.log("发送准备请求（别名）:", pidStr);
+        const finalPacket = this.protobuf.createGetReadyRequest(pidStr);
         this.sendWebSocketMessage(finalPacket);
     }
     
@@ -658,12 +659,45 @@ class NetworkManager {
     // 处理游戏开始通知
     handleGameStartNotification(data) {
         const notification = this.protobuf.parseGameStartNotification(data);
-        if (!notification) return;
-        
-        console.log("收到游戏开始通知:", notification.room_id);
-        GameStateManager.startGame();
-        
+        if (!notification) {
+            console.error('[Network] 解析游戏开始通知失败: notification为空');
+            return;
+        }
+
+        console.log('[Network] 原始 game_start_notification 解析结果:', notification);
+
+        // 容错：room_id 兜底
+        if (!notification.room_id) {
+            const fallbackId = this.currentRoomId || GameStateManager.currentRoom?.id || '';
+            if (fallbackId) {
+                console.warn('[Network] game_start_notification room_id 缺失, 使用兜底:', fallbackId);
+                notification.room_id = fallbackId;
+            } else {
+                console.error('[Network] 无法兜底 room_id (currentRoomId 与 GameStateManager.currentRoom.id 都为空)');
+            }
+        }
+
+        // 玩家列表同步
+        const parsedPlayers = notification.players || [];
+        if (parsedPlayers.length > 0) {
+            console.log('[Network] 通知包含玩家列表, count=', parsedPlayers.length);
+            GameStateManager.updateRoomPlayers(parsedPlayers);
+        } else {
+            console.warn('[Network] 通知不含玩家列表, 保持现有列表 count=', GameStateManager.currentRoom.playerList?.length || 0);
+        }
+
+        // 状态切换前记录
+        console.log('[Network] 准备切换到 IN_GAME, 当前状态=', GameStateManager.currentState, ' roomId=', notification.room_id);
+
+        if (GameStateManager.currentState !== GameStateManager.GAME_STATES.IN_GAME) {
+            GameStateManager.startGame();
+        } else {
+            console.log('[Network] 已在 IN_GAME, 不重复调用 startGame');
+        }
+
+        // 发事件供 UI 界面刷新
         this.emit('game_start_notification', notification);
+        console.log('[Network] 已分发 game_start_notification 事件');
     }
     
     // 处理准备响应
@@ -672,7 +706,7 @@ class NetworkManager {
         if (!response) return;
         
         if (response.success) {
-            console.log("准备成功");
+            console.log("[Network] GET_READY_RESPONSE 成功 (不切换状态，等待服务器广播房间/开始通知)");
             // 可以触发事件通知UI更新
             this.emit('ready_status_updated', response.isReady);
         } else {

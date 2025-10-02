@@ -259,14 +259,29 @@ export default class Main {
     // 显示对应的页面
     switch (newState) {
       case GameStateManager.GAME_STATES.MAIN_MENU:
+        this.isLoading = false;
         this.currentPage = this.mainMenu;
         this.mainMenu.show();
         break;
+      case GameStateManager.GAME_STATES.LOGIN:
+        // 登录阶段暂时使用加载界面或主菜单的过渡，这里保持加载态但不进入错误屏
+        this.isLoading = true;
+        this.currentPage = null;
+        this.loadingMessage = '正在登录...';
+        break;
       case GameStateManager.GAME_STATES.ROOM_LIST:
+        this.isLoading = false;
         this.currentPage = this.roomList;
         this.roomList.show();
         break;
       case GameStateManager.GAME_STATES.IN_ROOM:
+        this.isLoading = false;
+        this.currentPage = this.gameRoom;
+        this.gameRoom.show();
+        break;
+      case GameStateManager.GAME_STATES.IN_GAME:
+        // 游戏开始后继续显示游戏房间页面（显示游戏界面）
+        this.isLoading = false;
         this.currentPage = this.gameRoom;
         this.gameRoom.show();
         break;
@@ -275,6 +290,7 @@ export default class Main {
         this.isLoading = true;
         break;
       default:
+        console.warn('状态切换到未知或未处理状态, 将显示错误屏:', newState);
         this.currentPage = null;
         break;
     }
@@ -356,10 +372,26 @@ export default class Main {
   render() {
     if (this.isLoading) {
       this.renderLoadingScreen();
-    } else if (this.currentPage) {
-      // 当前页面处理自己的渲染
+      return;
+    }
+
+    if (!this.currentPage) {
+      // 容错：如果已经在 IN_GAME，却没有设置 currentPage，尝试恢复
+      if (GameStateManager.currentState === GameStateManager.GAME_STATES.IN_GAME) {
+        console.warn('[Recover] IN_GAME 状态下 currentPage 丢失，尝试自动恢复 gameRoom');
+        this.currentPage = this.gameRoom;
+        this.gameRoom.show();
+      } else if (GameStateManager.currentState === GameStateManager.GAME_STATES.IN_ROOM) {
+        console.warn('[Recover] IN_ROOM 状态下 currentPage 丢失，尝试自动恢复 gameRoom');
+        this.currentPage = this.gameRoom;
+        this.gameRoom.show();
+      }
+    }
+
+    if (this.currentPage) {
       this.currentPage.render();
     } else {
+      console.warn('进入错误屏: currentPage仍为空, isLoading=', this.isLoading, ' state=', GameStateManager.currentState);
       this.renderErrorScreen();
     }
   }
