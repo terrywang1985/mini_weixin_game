@@ -351,6 +351,9 @@ class NetworkManager {
                 case this.protobuf.MESSAGE_IDS.GAME_START_NOTIFICATION:
                     this.handleGameStartNotification(msgData);
                     break;
+                case this.protobuf.MESSAGE_IDS.GAME_STATE_NOTIFICATION:
+                    this.handleGameStateNotification(msgData);
+                    break;
                 case this.protobuf.MESSAGE_IDS.GET_READY_RESPONSE:
                     this.handleGetReadyResponse(msgData);
                     break;
@@ -727,6 +730,39 @@ class NetworkManager {
         } else {
             console.error("准备失败:", response.message);
         }
+    }
+    
+    // 处理游戏状态通知
+    handleGameStateNotification(data) {
+        console.log("收到游戏状态通知");
+        const notification = this.protobuf.parseGameStateNotification(data);
+        if (!notification) {
+            console.error("解析游戏状态通知失败");
+            return;
+        }
+        
+        console.log(`[Network] 游戏状态通知: 房间=${notification.roomId}, 当前回合=${notification.gameState?.currentTurn}`);
+        
+        // 更新游戏状态到状态管理器
+        if (notification.gameState) {
+            GameStateManager.updateGameState(notification.gameState);
+            
+            // 查找当前玩家的手牌
+            const currentUserId = GameStateManager.getUserInfo()?.uid;
+            if (currentUserId) {
+                const currentPlayer = notification.gameState.players.find(p => p.id === currentUserId);
+                if (currentPlayer && currentPlayer.cards) {
+                    console.log(`[Network] 当前玩家手牌数量: ${currentPlayer.cards.length}`);
+                    currentPlayer.cards.forEach((card, index) => {
+                        console.log(`[Network] 手牌 ${index}: ${card.word} (${card.wordClass})`);
+                    });
+                }
+            }
+        }
+        
+        // 触发事件供UI更新
+        this.emit('game_state_notification', notification);
+        console.log('[Network] 已分发 game_state_notification 事件');
     }
     
     // 处理游戏动作通知

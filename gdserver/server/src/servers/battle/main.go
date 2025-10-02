@@ -9,12 +9,15 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"os/signal"
 	pb "proto"
 	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 // BattleServer 结构体
@@ -28,6 +31,10 @@ type BattleServer struct {
 	PlayersMutex sync.RWMutex
 	Discovery    discovery.Discovery
 	InstanceID   string
+	// GRPC连接管理（全局共享）
+	gameConn   *grpc.ClientConn
+	gameClient pb.GameRpcServiceClient
+	connMutex  sync.RWMutex
 }
 
 func main() {
@@ -57,7 +64,18 @@ func main() {
 	server.startRoomGRPCServer(rpc.RoomServiceGRPCPort, server.InstanceID)
 
 	slog.Info("Battle server is running")
-	select {} // 阻塞主线程
+	
+	// 设置优雅关闭
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	
+	<-c // 等待关闭信号
+	slog.Info("Shutting down Battle server...")
+	
+	// 关闭GameServer连接
+	server.CloseGameServerConnection()
+	
+	slog.Info("Battle server stopped")
 }
 
 // 注册服务发现
@@ -109,6 +127,59 @@ func (s *BattleServer) registerServiceDiscovery() {
 			cancel()
 		}
 	}()
+}
+// getGameClient 获取GameServer客户端（懒加载连接）
+func (s *BattleServer) getGameClient() (pb.GameRpcServiceClient, error) {
+	s.connMutex.RLock()
+	// 如果连接已存在且健康，直接返回
+	if s.gameClient != nil && s.gameConn != nil {
+		// 简单检查连接状态
+		if s.gameConn.GetState().String() != "SHUTDOWN" {
+			defer s.connMutex.RUnlock()
+			return s.gameClient, nil
+		}
+	}
+	s.connMutex.RUnlock()
+
+	// 需要建立新连接，获取写锁
+	s.connMutex.Lock()
+	defer s.connMutex.Unlock()
+
+	// 双重检查，防止并发时重复创建连接
+	if s.gameClient != nil && s.gameConn != nil {
+		if s.gameConn.GetState().String() != "SHUTDOWN" {
+			return s.gameClient, nil
+		}
+		// 关闭旧连接
+		s.gameConn.Close()
+	}
+
+	// 建立新连接
+	gameServerAddr := fmt.Sprintf("127.0.0.1:%d", rpc.GameServiceGRPCPort)
+	conn, err := grpc.NewClient(gameServerAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		slog.Error("Failed to create game server connection", "addr", gameServerAddr, "error", err)
+		return nil, fmt.Errorf("failed to connect to game server: %w", err)
+	}
+
+	s.gameConn = conn
+	s.gameClient = pb.NewGameRpcServiceClient(conn)
+
+	slog.Info("Game server connection established (lazy loading)", "addr", gameServerAddr)
+	return s.gameClient, nil
+}
+
+// CloseGameServerConnection 关闭GameServer连接（公开方法，用于服务关闭）
+func (s *BattleServer) CloseGameServerConnection() {
+	s.connMutex.Lock()
+	defer s.connMutex.Unlock()
+	
+	if s.gameConn != nil {
+		s.gameConn.Close()
+		s.gameConn = nil
+		s.gameClient = nil
+		slog.Info("Game server connection closed")
+	}
 }
 
 // 启动gRPC服务器

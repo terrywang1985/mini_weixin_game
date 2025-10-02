@@ -23,6 +23,7 @@ class GameStateManager {
         this.stateChangeCallbacks = [];
         this.roomUpdateCallbacks = [];
         this.playerUpdateCallbacks = [];
+        this.gameStateUpdateCallbacks = [];
     }
     
     // 重置所有状态
@@ -59,7 +60,12 @@ class GameStateManager {
         this.gameData = {
             isReady: false,
             gameStarted: false,
-            playerPositions: new Map()
+            playerPositions: new Map(),
+            // 卡牌游戏状态
+            gameState: null,
+            myHandCards: [],
+            currentTurn: -1,
+            cardTable: null
         };
     }
     
@@ -166,6 +172,57 @@ class GameStateManager {
         console.log(`玩家${playerId}位置更新:`, position);
         this.notifyPlayerUpdate();
     }
+
+    // 更新游戏状态 (卡牌游戏)
+    updateGameState(gameState) {
+        this.gameData.gameState = gameState;
+        this.gameData.currentTurn = gameState.currentTurn;
+        this.gameData.cardTable = gameState.cardTable;
+        
+        // 更新当前玩家的手牌
+        const currentUserId = this.userInfo.uid;
+        if (currentUserId && gameState.players) {
+            const currentPlayer = gameState.players.find(p => p.id === currentUserId);
+            if (currentPlayer && currentPlayer.cards) {
+                this.gameData.myHandCards = currentPlayer.cards;
+                console.log(`[GameStateManager] 更新手牌，数量: ${this.gameData.myHandCards.length}`);
+            }
+        }
+        
+        console.log("[GameStateManager] 游戏状态更新:", {
+            currentTurn: this.gameData.currentTurn,
+            myHandCardsCount: this.gameData.myHandCards.length,
+            cardTableCards: this.gameData.cardTable?.cards?.length || 0
+        });
+        
+        // 触发游戏状态更新回调
+        this.notifyGameStateUpdate();
+    }
+
+    // 获取当前玩家手牌
+    getMyHandCards() {
+        return [...this.gameData.myHandCards];
+    }
+
+    // 获取卡牌桌面状态
+    getCardTable() {
+        return this.gameData.cardTable ? { ...this.gameData.cardTable } : null;
+    }
+
+    // 获取当前回合玩家
+    getCurrentTurn() {
+        return this.gameData.currentTurn;
+    }
+
+    // 检查是否轮到自己
+    isMyTurn() {
+        if (!this.gameData.gameState || !this.gameData.gameState.players) return false;
+        const currentTurnIndex = this.gameData.currentTurn;
+        if (currentTurnIndex < 0 || currentTurnIndex >= this.gameData.gameState.players.length) return false;
+        
+        const currentTurnPlayer = this.gameData.gameState.players[currentTurnIndex];
+        return currentTurnPlayer && currentTurnPlayer.id === this.userInfo.uid;
+    }
     
     // 获取玩家位置
     getPlayerPosition(playerId) {
@@ -237,6 +294,11 @@ class GameStateManager {
         this.playerUpdateCallbacks.push(callback);
     }
     
+    // 注册游戏状态更新回调
+    onGameStateUpdate(callback) {
+        this.gameStateUpdateCallbacks.push(callback);
+    }
+    
     // 通知状态变化
     notifyStateChange(oldState, newState) {
         this.stateChangeCallbacks.forEach(callback => {
@@ -266,6 +328,23 @@ class GameStateManager {
                 callback(this.currentRoom.playerList);
             } catch (error) {
                 console.error("玩家更新回调错误:", error);
+            }
+        });
+    }
+    
+    // 通知游戏状态更新
+    notifyGameStateUpdate() {
+        this.gameStateUpdateCallbacks.forEach(callback => {
+            try {
+                callback({
+                    handCards: this.getMyHandCards(),
+                    cardTable: this.getCardTable(),
+                    currentTurn: this.getCurrentTurn(),
+                    isMyTurn: this.isMyTurn(),
+                    gameState: this.gameData.gameState
+                });
+            } catch (error) {
+                console.error("游戏状态更新回调错误:", error);
             }
         });
     }

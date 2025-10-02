@@ -1089,6 +1089,326 @@ class ProtobufManager {
             };
         }
     }
+
+    // 解析游戏状态通知 (GAME_STATE_NOTIFICATION)
+    parseGameStateNotification(data) {
+        console.log('解析游戏状态通知数据，长度:', data ? data.length : 'null');
+        
+        if (!data || data.length === 0) {
+            console.log('游戏状态通知数据为空');
+            return null;
+        }
+
+        try {
+            let offset = 0;
+            let roomId = "";
+            let gameState = null;
+
+            while (offset < data.length) {
+                const tag = data[offset];
+                const fieldNumber = tag >> 3;
+                const wireType = tag & 0x07;
+                offset++;
+
+                console.log(`解析游戏状态通知字段: field=${fieldNumber}, wireType=${wireType}`);
+
+                switch (fieldNumber) {
+                    case 2: // room_id
+                        if (wireType === 2) {
+                            const lengthResult = this.decodeVarint(data, offset);
+                            offset = lengthResult.nextOffset;
+                            roomId = this.decodeString(data, offset, lengthResult.value);
+                            offset += lengthResult.value;
+                            console.log("游戏状态房间ID:", roomId);
+                        }
+                        break;
+                    case 3: // game_state
+                        if (wireType === 2) {
+                            const lengthResult = this.decodeVarint(data, offset);
+                            offset = lengthResult.nextOffset;
+                            const gameStateData = data.slice(offset, offset + lengthResult.value);
+                            gameState = this.parseGameState(gameStateData);
+                            offset += lengthResult.value;
+                            console.log("解析到游戏状态:", gameState);
+                        }
+                        break;
+                    default:
+                        console.log(`跳过游戏状态通知未知字段 ${fieldNumber}`);
+                        if (wireType === 0) {
+                            const valueResult = this.decodeVarint(data, offset);
+                            offset = valueResult.nextOffset;
+                        } else if (wireType === 2) {
+                            const lengthResult = this.decodeVarint(data, offset);
+                            offset = lengthResult.nextOffset + lengthResult.value;
+                        }
+                        break;
+                }
+            }
+            
+            return {
+                roomId,
+                gameState
+            };
+        } catch (error) {
+            console.error("解析游戏状态通知失败:", error);
+            return null;
+        }
+    }
+
+    // 解析GameState
+    parseGameState(data) {
+        console.log('解析GameState数据，长度:', data.length);
+        
+        let offset = 0;
+        let players = [];
+        let cardTable = null;
+        let currentTurn = 0;
+
+        while (offset < data.length) {
+            const tag = data[offset];
+            const fieldNumber = tag >> 3;
+            const wireType = tag & 0x07;
+            offset++;
+
+            switch (fieldNumber) {
+                case 1: // players
+                    if (wireType === 2) {
+                        const lengthResult = this.decodeVarint(data, offset);
+                        offset = lengthResult.nextOffset;
+                        const playerData = data.slice(offset, offset + lengthResult.value);
+                        const player = this.parseBattlePlayer(playerData);
+                        if (player) {
+                            players.push(player);
+                        }
+                        offset += lengthResult.value;
+                    }
+                    break;
+                case 2: // card_table
+                    if (wireType === 2) {
+                        const lengthResult = this.decodeVarint(data, offset);
+                        offset = lengthResult.nextOffset;
+                        const tableData = data.slice(offset, offset + lengthResult.value);
+                        cardTable = this.parseCardTable(tableData);
+                        offset += lengthResult.value;
+                    }
+                    break;
+                case 3: // current_turn
+                    if (wireType === 0) {
+                        const result = this.decodeVarint(data, offset);
+                        currentTurn = result.value;
+                        offset = result.nextOffset;
+                    }
+                    break;
+                default:
+                    if (wireType === 0) {
+                        const result = this.decodeVarint(data, offset);
+                        offset = result.nextOffset;
+                    } else if (wireType === 2) {
+                        const lengthResult = this.decodeVarint(data, offset);
+                        offset = lengthResult.nextOffset + lengthResult.value;
+                    }
+                    break;
+            }
+        }
+
+        return {
+            players,
+            cardTable,
+            currentTurn
+        };
+    }
+
+    // 解析BattlePlayer
+    parseBattlePlayer(data) {
+        console.log('解析BattlePlayer数据，长度:', data.length);
+        
+        let offset = 0;
+        let id = 0;
+        let name = "";
+        let cards = [];
+        let currentScore = 0;
+
+        while (offset < data.length) {
+            const tag = data[offset];
+            const fieldNumber = tag >> 3;
+            const wireType = tag & 0x07;
+            offset++;
+
+            switch (fieldNumber) {
+                case 1: // id
+                    if (wireType === 0) {
+                        const result = this.decodeVarint(data, offset);
+                        id = result.value;
+                        offset = result.nextOffset;
+                        console.log('玩家ID:', id);
+                    }
+                    break;
+                case 2: // name
+                    if (wireType === 2) {
+                        const lengthResult = this.decodeVarint(data, offset);
+                        offset = lengthResult.nextOffset;
+                        name = this.decodeString(data, offset, lengthResult.value);
+                        offset += lengthResult.value;
+                        console.log('玩家姓名:', name);
+                    }
+                    break;
+                case 3: // cards (手牌)
+                    if (wireType === 2) {
+                        const lengthResult = this.decodeVarint(data, offset);
+                        offset = lengthResult.nextOffset;
+                        const cardData = data.slice(offset, offset + lengthResult.value);
+                        const card = this.parseWordCard(cardData);
+                        if (card) {
+                            cards.push(card);
+                        }
+                        offset += lengthResult.value;
+                    }
+                    break;
+                case 4: // current_score
+                    if (wireType === 0) {
+                        const result = this.decodeVarint(data, offset);
+                        currentScore = result.value;
+                        offset = result.nextOffset;
+                        console.log('玩家分数:', currentScore);
+                    }
+                    break;
+                default:
+                    if (wireType === 0) {
+                        const result = this.decodeVarint(data, offset);
+                        offset = result.nextOffset;
+                    } else if (wireType === 2) {
+                        const lengthResult = this.decodeVarint(data, offset);
+                        offset = lengthResult.nextOffset + lengthResult.value;
+                    }
+                    break;
+            }
+        }
+
+        console.log(`解析到玩家: ID=${id}, 姓名=${name}, 手牌数=${cards.length}, 分数=${currentScore}`);
+        return {
+            id,
+            name,
+            cards,
+            currentScore
+        };
+    }
+
+    // 解析WordCard
+    parseWordCard(data) {
+        let offset = 0;
+        let id = 0;
+        let word = "";
+        let wordClass = "";
+        let description = "";
+
+        while (offset < data.length) {
+            const tag = data[offset];
+            const fieldNumber = tag >> 3;
+            const wireType = tag & 0x07;
+            offset++;
+
+            switch (fieldNumber) {
+                case 1: // id
+                    if (wireType === 0) {
+                        const result = this.decodeVarint(data, offset);
+                        id = result.value;
+                        offset = result.nextOffset;
+                    }
+                    break;
+                case 2: // word
+                    if (wireType === 2) {
+                        const lengthResult = this.decodeVarint(data, offset);
+                        offset = lengthResult.nextOffset;
+                        word = this.decodeString(data, offset, lengthResult.value);
+                        offset += lengthResult.value;
+                    }
+                    break;
+                case 3: // word_class
+                    if (wireType === 2) {
+                        const lengthResult = this.decodeVarint(data, offset);
+                        offset = lengthResult.nextOffset;
+                        wordClass = this.decodeString(data, offset, lengthResult.value);
+                        offset += lengthResult.value;
+                    }
+                    break;
+                case 4: // description
+                    if (wireType === 2) {
+                        const lengthResult = this.decodeVarint(data, offset);
+                        offset = lengthResult.nextOffset;
+                        description = this.decodeString(data, offset, lengthResult.value);
+                        offset += lengthResult.value;
+                    }
+                    break;
+                default:
+                    if (wireType === 0) {
+                        const result = this.decodeVarint(data, offset);
+                        offset = result.nextOffset;
+                    } else if (wireType === 2) {
+                        const lengthResult = this.decodeVarint(data, offset);
+                        offset = lengthResult.nextOffset + lengthResult.value;
+                    }
+                    break;
+            }
+        }
+
+        return {
+            id,
+            word,
+            wordClass,
+            description
+        };
+    }
+
+    // 解析CardTable
+    parseCardTable(data) {
+        let offset = 0;
+        let cards = [];
+        let sentence = "";
+
+        while (offset < data.length) {
+            const tag = data[offset];
+            const fieldNumber = tag >> 3;
+            const wireType = tag & 0x07;
+            offset++;
+
+            switch (fieldNumber) {
+                case 1: // cards
+                    if (wireType === 2) {
+                        const lengthResult = this.decodeVarint(data, offset);
+                        offset = lengthResult.nextOffset;
+                        const cardData = data.slice(offset, offset + lengthResult.value);
+                        const card = this.parseWordCard(cardData);
+                        if (card) {
+                            cards.push(card);
+                        }
+                        offset += lengthResult.value;
+                    }
+                    break;
+                case 2: // sentence
+                    if (wireType === 2) {
+                        const lengthResult = this.decodeVarint(data, offset);
+                        offset = lengthResult.nextOffset;
+                        sentence = this.decodeString(data, offset, lengthResult.value);
+                        offset += lengthResult.value;
+                    }
+                    break;
+                default:
+                    if (wireType === 0) {
+                        const result = this.decodeVarint(data, offset);
+                        offset = result.nextOffset;
+                    } else if (wireType === 2) {
+                        const lengthResult = this.decodeVarint(data, offset);
+                        offset = lengthResult.nextOffset + lengthResult.value;
+                    }
+                    break;
+            }
+        }
+
+        return {
+            cards,
+            sentence
+        };
+    }
 }
 
 // 导出模块

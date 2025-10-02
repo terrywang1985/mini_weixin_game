@@ -1,16 +1,12 @@
 package main
 
 import (
-	"common/rpc"
 	"context"
-	"fmt"
 	"log/slog"
 	"math/rand"
 	pb "proto"
 	"sync"
 	"time"
-
-	"google.golang.org/grpc"
 )
 
 type BattleRoom struct {
@@ -53,8 +49,13 @@ func NewBattleRoom(battleID string, server *BattleServer, gameType GameType) *Ba
 
 	// 创建游戏实例
 	room.Game = GameFactory(gameType)
+	
+	// 设置房间引用（适用于所有游戏类型）
+	room.Game.SetRoomRef(room)
+	
 	return room
 }
+
 
 func (room *BattleRoom) AddPlayer(playerID uint64, name string) {
 	room.PlayersMutex.Lock()
@@ -143,10 +144,21 @@ func (room *BattleRoom) StartGame() {
 }
 
 func (room *BattleRoom) BroadcastGameState() {
+	if room.Game == nil {
+		slog.Warn("Cannot broadcast game state: Game is nil")
+		return
+	}
+	
 	state := room.Game.GetState()
-	// 实际项目中这里需要通过RPC通知所有玩家
-	slog.Info("Broadcasting game state", "state", state)
+	slog.Info("Broadcasting game state", "current_turn", state.CurrentTurn, "players_count", len(state.Players))
 
+	// 通知房间内所有玩家
+	for playerID := range room.Players {
+		room.NotifyGameState(playerID, &pb.GameStateNotify{
+			RoomId:    room.BattleID,
+			GameState: state,
+		})
+	}
 }
 
 func (room *BattleRoom) Run() {
@@ -291,15 +303,12 @@ func (room *BattleRoom) BroadcastNotifyGameState() {
 }
 
 func (room *BattleRoom) NotifyRoomStatus(playerID uint64, msg *pb.RoomDetail) {
-	gameServerAddr := fmt.Sprintf("127.0.0.1:%d", rpc.GameServiceGRPCPort)
-	conn, err := grpc.Dial(gameServerAddr, grpc.WithInsecure())
+	client, err := room.Server.getGameClient()
 	if err != nil {
-		slog.Error("Failed to connect to game server", "addr", gameServerAddr, "error", err)
+		slog.Error("Failed to get game client", "error", err)
 		return
 	}
-	defer conn.Close()
 
-	client := pb.NewGameRpcServiceClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
@@ -315,23 +324,15 @@ func (room *BattleRoom) NotifyRoomStatus(playerID uint64, msg *pb.RoomDetail) {
 }
 
 func (room *BattleRoom) NotifyGameState(playerId uint64, msg *pb.GameStateNotify) {
-	// 获取玩家所在GameServer
-	//gameServerAddr, err := room.Server.GetPlayerGameServer(playerId)
-	//if err != nil {
-	//	slog.Error("Failed to get player's game server", "player_id", playerId, "error", err)
-	//	return
-	//}
-
-	gameServerAddr := fmt.Sprintf("127.0.0.1:%d", rpc.GameServiceGRPCPort)
-	// 连接GameServer
-	conn, err := grpc.Dial(gameServerAddr, grpc.WithInsecure())
+	client, err := room.Server.getGameClient()
 	if err != nil {
-		slog.Error("Failed to connect to game server", "addr", gameServerAddr, "error", err)
+		slog.Error("Failed to get game client", "error", err)
 		return
 	}
-	defer conn.Close()
 
-	client := pb.NewGameRpcServiceClient(conn)
+	// 设置被通知者的ID
+	msg.BeNotifiedUid = playerId
+
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
@@ -375,39 +376,45 @@ func (room *BattleRoom) BroadcastPlayerPosition(playerID uint64, moveAction *pb.
 		CharMove: moveAction,
 	}
 
+	// 使用通用的BroadcastPlayerAction方法
+	room.BroadcastPlayerAction(positionUpdate)
+}
+
+// BroadcastPlayerAction 广播玩家动作（通用方法）
+func (room *BattleRoom) BroadcastPlayerAction(action *pb.GameAction) {
+	slog.Info("Broadcasting player action", "room_id", room.BattleID, "player_id", action.PlayerId,
+		"action_type", action.ActionType)
+
 	// 向房间内所有玩家广播
 	for otherPlayerID := range room.Players {
-		room.NotifyPlayerPosition(otherPlayerID, positionUpdate)
+		room.NotifyPlayerAction(otherPlayerID, action)
 	}
 }
 
-// NotifyPlayerPosition 通知单个玩家位置更新
-func (room *BattleRoom) NotifyPlayerPosition(playerID uint64, positionUpdate *pb.GameAction) {
-	gameServerAddr := fmt.Sprintf("127.0.0.1:%d", rpc.GameServiceGRPCPort)
-	conn, err := grpc.Dial(gameServerAddr, grpc.WithInsecure())
+// NotifyPlayerAction 通知单个玩家动作更新（通用方法）
+func (room *BattleRoom) NotifyPlayerAction(playerID uint64, action *pb.GameAction) {
+	client, err := room.Server.getGameClient()
 	if err != nil {
-		slog.Error("Failed to connect to game server for position update", "addr", gameServerAddr, "error", err)
+		slog.Error("Failed to get game client for action update", "error", err)
 		return
 	}
-	defer conn.Close()
 
-	client := pb.NewGameRpcServiceClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	// 使用PlayerActionNotify消息格式发送位置更新
+	// 使用PlayerActionNotify消息格式发送动作更新
 	notify := &pb.PlayerActionNotify{
 		BeNotifiedUid: playerID,
 		RoomId:        room.BattleID,
-		PlayerId:      positionUpdate.PlayerId,
-		Action:        positionUpdate,
+		PlayerId:      action.PlayerId,
+		Action:        action,
 	}
 
 	_, err = client.PlayerActionNotifyRpc(ctx, notify)
 	if err != nil {
-		slog.Error("Failed to send position update notification", "player_id", playerID, "error", err)
+		slog.Error("Failed to send action notification", "player_id", playerID, "error", err)
 	} else {
-		slog.Debug("Position update sent successfully", "player_id", playerID)
+		slog.Debug("Action notification sent successfully", "player_id", playerID)
 	}
 }
 
@@ -429,15 +436,12 @@ func (room *BattleRoom) NotifyGameStart() {
 
 // NotifyGameStartToPlayer 通知单个玩家游戏开始
 func (room *BattleRoom) NotifyGameStartToPlayer(playerID uint64, gameStartNotify *pb.GameStartNotification) {
-	gameServerAddr := fmt.Sprintf("127.0.0.1:%d", rpc.GameServiceGRPCPort)
-	conn, err := grpc.Dial(gameServerAddr, grpc.WithInsecure())
+	client, err := room.Server.getGameClient()
 	if err != nil {
-		slog.Error("Failed to connect to game server for game start notification", "addr", gameServerAddr, "error", err)
+		slog.Error("Failed to get game client for game start notification", "error", err)
 		return
 	}
-	defer conn.Close()
 
-	client := pb.NewGameRpcServiceClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
@@ -487,7 +491,7 @@ func (room *BattleRoom) BroadcastInitialPositions(newPlayerID uint64) {
 		}
 
 		// 发送给新玩家
-		room.NotifyPlayerPosition(newPlayerID, positionUpdate)
+		room.NotifyPlayerAction(newPlayerID, positionUpdate)
 		slog.Debug("Sent existing player position to new player",
 			"existing_player", playerID, "new_player", newPlayerID,
 			"pos_x", playerInfo.PositionX, "pos_y", playerInfo.PositionY)

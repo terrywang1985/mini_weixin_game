@@ -6,7 +6,14 @@ import (
 	"math/rand"
 	"os"
 	pb "proto"
+	"time"
 )
+
+// RoomInterface 房间接口，用于Game与Room解耦
+type RoomInterface interface {
+	BroadcastGameState()
+	BroadcastPlayerAction(action *pb.GameAction) // 通用的玩家动作广播
+}
 
 // GameType 游戏类型枚举
 type GameType int
@@ -24,14 +31,15 @@ type Game interface {
 	GetState() *pb.GameState
 	IsGameOver() bool
 	EndGame()
+	SetRoomRef(room RoomInterface) // 设置房间引用
 }
 
 // Player 玩家结构体
 type Player struct {
-	ID       uint64
-	Name     string
-	Hand     []GameCard
-	Score    int
+	ID    uint64
+	Name  string
+	Hand  []GameCard
+	Score int
 	// 位置信息 - 使用int32配合protobuf的CharacterMoveAction
 	PositionX int32
 	PositionY int32
@@ -53,7 +61,7 @@ type WordCardGame struct {
 	LastPlayed  int
 	PassCount   int
 	// 添加房间引用用于广播
-	Room        *BattleRoom
+	Room RoomInterface
 }
 
 func (g *WordCardGame) Init(players []*Player) {
@@ -65,12 +73,22 @@ func (g *WordCardGame) Start() {
 	dealCards(g, 8)
 	g.CurrentTurn = rand.Intn(len(g.Players))
 	g.PassCount = 0
+
+	// 发牌完成后，广播初始游戏状态
+	if g.Room != nil {
+		g.Room.BroadcastGameState()
+	}
+}
+
+// SetRoomRef 设置房间引用
+func (g *WordCardGame) SetRoomRef(room RoomInterface) {
+	g.Room = room
 }
 
 func (g *WordCardGame) HandleAction(playerID uint64, action *pb.GameAction) bool {
 	// 添加接收action的日志
 	log.Printf("[Battle] HandleAction - PlayerID: %d, ActionType: %v", playerID, action.ActionType)
-	
+
 	player := g.findPlayerByID(playerID)
 	if player == nil {
 		log.Printf("[Battle] HandleAction - Player not found: %d", playerID)
@@ -110,23 +128,23 @@ func (g *WordCardGame) HandleAction(playerID uint64, action *pb.GameAction) bool
 			log.Printf("[Battle] CharMove action is nil for player %d", playerID)
 			return false
 		}
-		
+
 		// 记录位置移动信息
-		log.Printf("[Battle] Player %d moved from (%d, %d) to (%d, %d)", 
+		log.Printf("[Battle] Player %d moved from (%d, %d) to (%d, %d)",
 			playerID, moveAction.FromX, moveAction.FromY, moveAction.ToX, moveAction.ToY)
-		
+
 		// 更新玩家在游戏中的位置状态
 		if player := g.findPlayerByID(playerID); player != nil {
 			player.PositionX = moveAction.ToX
 			player.PositionY = moveAction.ToY
 			log.Printf("[Battle] Updated player %d position to (%d, %d)", playerID, player.PositionX, player.PositionY)
 		}
-		
+
 		// 广播位置更新给其他玩家
 		if g.Room != nil {
 			g.BroadcastPlayerPositionUpdate(playerID, moveAction)
 		}
-		
+
 		return true
 	default:
 		log.Printf("[Battle] Unknown action type: %v for player %d", action.ActionType, playerID)
@@ -145,6 +163,15 @@ func (g *WordCardGame) GetState() *pb.GameState {
 			Name:         p.Name,
 			CurrentScore: int32(p.Score),
 		}
+
+		// 添加玩家手牌信息
+		for _, card := range p.Hand {
+			playerState.Cards = append(playerState.Cards, &pb.WordCard{
+				Word:      card.Word,
+				WordClass: card.POS,
+			})
+		}
+
 		state.Players = append(state.Players, playerState)
 	}
 
@@ -180,11 +207,21 @@ func (g *WordCardGame) BroadcastPlayerPositionUpdate(playerID uint64, moveAction
 		log.Printf("[Battle] Cannot broadcast position update: Room is nil")
 		return
 	}
-	
+
 	log.Printf("[Battle] Broadcasting position update for player %d to all other players", playerID)
-	
-	// 通过房间广播给所有玩家（包括自己）
-	g.Room.BroadcastPlayerPosition(playerID, moveAction)
+
+	// 创建位置更新的 GameAction
+	positionUpdate := &pb.GameAction{
+		PlayerId:   playerID,
+		ActionType: pb.ActionType_CHAR_MOVE,
+		Timestamp:  time.Now().UnixMilli(),
+		ActionDetail: &pb.GameAction_CharMove{
+			CharMove: moveAction,
+		},
+	}
+
+	// 通过房间广播给所有玩家
+	g.Room.BroadcastPlayerAction(positionUpdate)
 }
 
 // 内部辅助方法

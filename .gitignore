@@ -45,3 +45,5 @@ out/
 
 /gdserver/tools/code/
 gdserver/tools/code/*
+
+gdserver/server/bin/*.exe*
