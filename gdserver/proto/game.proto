@@ -210,6 +210,8 @@ enum ErrorCode {
   INVALID_ROOM = 12;
   INVALID_USER = 13;
   PLAYER_ALREADY_IN_ROOM = 14;
+  NOT_YOUR_TURN = 15;  // 非法操作
+  INVALID_ORDER = 16;  // 非法顺序
   }
 
 // 消息ID定义

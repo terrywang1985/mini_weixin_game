@@ -39,7 +39,7 @@ type Command struct {
 // CommandWithResult 带有结果通道的命令结构体
 type CommandWithResult struct {
 	Command
-	ResultChan chan bool
+	ResultChan chan pb.ErrorCode
 }
 
 func NewBattleRoom(battleID string, server *BattleServer, gameType GameType) *BattleRoom {
@@ -179,10 +179,10 @@ func (room *BattleRoom) Run() {
 			case cmd := <-room.CmdChan:
 				room.HandlePlayerCommand(cmd)
 			case cmdWithResult := <-room.CmdChanWithResult:
-				success := room.HandlePlayerCommandWithResult(cmdWithResult.Command)
+				result := room.HandlePlayerCommandWithResult(cmdWithResult.Command)
 				// 将结果发送回结果通道
 				select {
-				case cmdWithResult.ResultChan <- success:
+				case cmdWithResult.ResultChan <- result:
 				default:
 					// 如果通道已满或关闭，忽略结果
 				}
@@ -234,8 +234,8 @@ func (room *BattleRoom) HandlePlayerCommand(cmd Command) {
 	// 确保Game实例有效后再调用HandleAction
 	if room.Game != nil {
 		// 游戏层面的操作（卡牌、回合等）
-		success := room.Game.HandleAction(cmd.PlayerID, cmd.Action)
-		if success {
+		result := room.Game.HandleAction(cmd.PlayerID, cmd.Action)
+		if result == pb.ErrorCode_OK {
 			room.BroadcastGameState()
 		}
 	} else {
@@ -245,11 +245,11 @@ func (room *BattleRoom) HandlePlayerCommand(cmd Command) {
 }
 
 // HandlePlayerCommandWithResult 处理带结果的玩家命令
-func (room *BattleRoom) HandlePlayerCommandWithResult(cmd Command) bool {
+func (room *BattleRoom) HandlePlayerCommandWithResult(cmd Command) pb.ErrorCode {
 	// 确保Command不为nil
 	if cmd.Action == nil {
 		slog.Error("[Battle] Action is nil", "player_id", cmd.PlayerID)
-		return false
+		return pb.ErrorCode_INVALID_ACTION
 	}
 
 	// ===========================================
@@ -260,12 +260,12 @@ func (room *BattleRoom) HandlePlayerCommandWithResult(cmd Command) bool {
 	case pb.ActionType_CHAR_MOVE:
 		// 位置移动在Room层面处理（大厅、游戏中都需要）
 		room.handleCharMoveInRoom(cmd)
-		return true
+		return pb.ErrorCode_OK
 
 		// case pb.ActionType_AUTO_CHAT:
 		// 	// 聊天在Room层面处理（游戏前后都能聊天）
 		// 	room.handleChatInRoom(cmd)
-		// 	return true
+		// 	return pb.ErrorCode_OK
 	}
 
 	// ===========================================
@@ -276,21 +276,21 @@ func (room *BattleRoom) HandlePlayerCommandWithResult(cmd Command) bool {
 	if room.Game == nil {
 		slog.Warn("[Battle] Game not started yet, ignoring game action",
 			"action_type", cmd.Action.ActionType, "player_id", cmd.PlayerID)
-		return false
+		return pb.ErrorCode_INVALID_STATE
 	}
 
 	// 确保Game实例有效后再调用HandleAction
 	if room.Game != nil {
 		// 游戏层面的操作（卡牌、回合等）
-		success := room.Game.HandleAction(cmd.PlayerID, cmd.Action)
-		if success {
+		result := room.Game.HandleAction(cmd.PlayerID, cmd.Action)
+		if result == pb.ErrorCode_OK {
 			room.BroadcastGameState()
 		}
-		return success
+		return result
 	} else {
 		slog.Error("[Battle] Game instance is nil when handling action",
 			"action_type", cmd.Action.ActionType, "player_id", cmd.PlayerID)
-		return false
+		return pb.ErrorCode_SERVER_ERROR
 	}
 }
 

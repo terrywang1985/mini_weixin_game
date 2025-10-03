@@ -27,7 +27,7 @@ const (
 type Game interface {
 	Init(players []*Player)
 	Start()
-	HandleAction(playerID uint64, action *pb.GameAction) bool
+	HandleAction(playerID uint64, action *pb.GameAction) pb.ErrorCode
 	GetState() *pb.GameState
 	IsGameOver() bool
 	EndGame()
@@ -85,14 +85,14 @@ func (g *WordCardGame) SetRoomRef(room RoomInterface) {
 	g.Room = room
 }
 
-func (g *WordCardGame) HandleAction(playerID uint64, action *pb.GameAction) bool {
+func (g *WordCardGame) HandleAction(playerID uint64, action *pb.GameAction) pb.ErrorCode {
 	// 添加接收action的日志
 	log.Printf("[Battle] HandleAction - PlayerID: %d, ActionType: %v", playerID, action.ActionType)
 
 	player := g.findPlayerByID(playerID)
 	if player == nil {
 		log.Printf("[Battle] HandleAction - Player not found: %d", playerID)
-		return false
+		return pb.ErrorCode_INVALID_USER
 	}
 
 	// 获取当前玩家的索引
@@ -106,25 +106,29 @@ func (g *WordCardGame) HandleAction(playerID uint64, action *pb.GameAction) bool
 		if currentPlayerIndex != g.CurrentTurn {
 			log.Printf("[Battle] Not player %d's turn (current turn: %d, player index: %d)", 
 				playerID, g.CurrentTurn, currentPlayerIndex)
-			return false
+			return pb.ErrorCode_NOT_YOUR_TURN
 		}
 		
 		placeCard := action.GetPlaceCard()
 		cardIdx := int(placeCard.CardId)
+		targetIndex := int(placeCard.TargetIndex)
+		
 		if cardIdx < 0 || cardIdx >= len(player.Hand) {
 			log.Printf("[Battle] Invalid card index: %d for player %d", cardIdx, playerID)
-			return false
+			return pb.ErrorCode_INVALID_CARD
 		}
+		
 		card := player.Hand[cardIdx]
-		success := g.playCard(player, card, int(placeCard.TargetIndex))
+		success := g.playCard(player, card, targetIndex)
 		if success {
 			g.PassCount = 0
 			// 成功出牌后，轮到下一个玩家
 			g.nextTurn()
 			log.Printf("[Battle] Card placed successfully by player %d, next turn: %d", playerID, g.CurrentTurn)
-			return true
+			return pb.ErrorCode_OK
 		}
 		log.Printf("[Battle] Failed to place card for player %d", playerID)
+		return pb.ErrorCode_INVALID_ORDER
 	case pb.ActionType_SKIP_TURN:
 		log.Printf("[Battle] Handling SKIP_TURN action for player %d", playerID)
 		
@@ -132,7 +136,7 @@ func (g *WordCardGame) HandleAction(playerID uint64, action *pb.GameAction) bool
 		if currentPlayerIndex != g.CurrentTurn {
 			log.Printf("[Battle] Not player %d's turn for skip (current turn: %d, player index: %d)", 
 				playerID, g.CurrentTurn, currentPlayerIndex)
-			return false
+			return pb.ErrorCode_NOT_YOUR_TURN
 		}
 		
 		g.PassCount++
@@ -145,13 +149,13 @@ func (g *WordCardGame) HandleAction(playerID uint64, action *pb.GameAction) bool
 			g.PassCount = 0
 		}
 		log.Printf("[Battle] Player %d skipped turn, next turn: %d", playerID, g.CurrentTurn)
-		return true
+		return pb.ErrorCode_OK
 	case pb.ActionType_CHAR_MOVE:
 		log.Printf("[Battle] Handling CHAR_MOVE action for player %d", playerID)
 		moveAction := action.GetCharMove()
 		if moveAction == nil {
 			log.Printf("[Battle] CharMove action is nil for player %d", playerID)
-			return false
+			return pb.ErrorCode_INVALID_ACTION
 		}
 
 		// 记录位置移动信息
@@ -170,11 +174,11 @@ func (g *WordCardGame) HandleAction(playerID uint64, action *pb.GameAction) bool
 			g.BroadcastPlayerPositionUpdate(playerID, moveAction)
 		}
 
-		return true
+		return pb.ErrorCode_OK
 	default:
 		log.Printf("[Battle] Unknown action type: %v for player %d", action.ActionType, playerID)
+		return pb.ErrorCode_INVALID_ACTION
 	}
-	return false
 }
 
 func (g *WordCardGame) GetState() *pb.GameState {
@@ -278,9 +282,17 @@ func (g *WordCardGame) playCard(player *Player, card GameCard, position int) boo
 		}
 	}
 
-	// 添加到桌面
-	g.Table = append(g.Table[:position], append([]GameCard{card}, g.Table[position:]...)...)
-	g.POSSeq = append(g.POSSeq[:position], append([]string{card.POS}, g.POSSeq[position:]...)...)
+	// 添加到桌面（在指定位置插入）
+	if position >= len(g.Table) {
+		// 如果位置超出当前长度，添加到末尾
+		g.Table = append(g.Table, card)
+		g.POSSeq = append(g.POSSeq, card.POS)
+	} else {
+		// 在指定位置插入
+		g.Table = append(g.Table[:position], append([]GameCard{card}, g.Table[position:]...)...)
+		g.POSSeq = append(g.POSSeq[:position], append([]string{card.POS}, g.POSSeq[position:]...)...)
+	}
+	
 	g.LastPlayed = int(player.ID)
 	return true
 }

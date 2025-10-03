@@ -386,18 +386,7 @@ class HandCardArea {
         const userInfo = GameStateManager.getUserInfo();
         if (currentPlayer.id !== userInfo.uid) {
             console.log('[HandCardArea] 不是你的回合，无法出牌');
-            
-            // 显示提示信息
-            if (typeof wx !== 'undefined' && wx.showToast) {
-                wx.showToast({
-                    title: '现在不是你的回合，请等待',
-                    icon: 'none',
-                    duration: 2000
-                });
-            } else {
-                alert('现在不是你的回合，请等待其他玩家操作');
-            }
-            
+            this.showError('现在不是你的回合，请等待其他玩家操作');
             return;
         }
         
@@ -643,6 +632,21 @@ class HandCardArea {
                 this.selectCard(cardRect.index);
                 break;
             }
+        }
+    }
+    
+    // 显示错误提示
+    showError(message) {
+        // 在微信小游戏环境中显示提示
+        if (typeof wx !== 'undefined' && wx.showToast) {
+            wx.showToast({
+                title: message,
+                icon: 'none',
+                duration: 2000
+            });
+        } else {
+            // 在浏览器环境中使用alert
+            alert(message);
         }
     }
     

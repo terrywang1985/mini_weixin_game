@@ -391,7 +391,7 @@ func (s *BattleServer) PlayerActionRpc(ctx context.Context, req *pb.PlayerAction
 	}
 
 	// 创建一个通道来接收操作结果
-	resultChan := make(chan bool, 1)
+	resultChan := make(chan pb.ErrorCode, 1)
 	
 	// 创建一个带结果通道的命令
 	cmd := CommandWithResult{
@@ -407,12 +407,8 @@ func (s *BattleServer) PlayerActionRpc(ctx context.Context, req *pb.PlayerAction
 
 	// 等待操作结果
 	select {
-	case success := <-resultChan:
-		if success {
-			return &pb.PlayerActionRpcResponse{Ret: pb.ErrorCode_OK}, nil
-		} else {
-			return &pb.PlayerActionRpcResponse{Ret: pb.ErrorCode_INVALID_ACTION}, nil
-		}
+	case result := <-resultChan:
+		return &pb.PlayerActionRpcResponse{Ret: result}, nil
 	case <-ctx.Done():
 		return &pb.PlayerActionRpcResponse{Ret: pb.ErrorCode_TIMEOUT}, nil
 	}

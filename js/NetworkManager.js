@@ -809,11 +809,13 @@ class NetworkManager {
                 11: "无效卡牌",
                 12: "无效房间",
                 13: "无效用户",
-                14: "玩家已在房间中"
+                14: "玩家已在房间中",
+                15: "不是你的回合",
+                16: "卡牌放置顺序不符合语法规则"
             };
             
             const errorMsg = errorMessages[response.ret] || "未知错误";
-            console.error("[Network] 游戏动作执行失败:", errorMsg);
+            console.log("[Network] 游戏动作执行失败:", errorMsg);
             
             // 可以触发事件通知UI显示错误信息
             this.emit('game_action_failed', {

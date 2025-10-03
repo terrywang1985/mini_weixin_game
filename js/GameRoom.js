@@ -824,9 +824,20 @@ class GameRoom {
             message = data.errorMessage;
         }
         
-        // 特殊处理不是回合玩家的情况
-        if (data.errorCode === 10) { // INVALID_ACTION
-            message = "现在不是你的回合，请等待其他玩家操作";
+        // 特殊处理不同类型的错误
+        switch (data.errorCode) {
+            case 10: // INVALID_ACTION - 保持向后兼容
+                message = "卡牌放置不符合语法规则，请重新选择位置";
+                break;
+            case 11: // INVALID_CARD
+                message = "无效的卡牌";
+                break;
+            case 15: // NOT_YOUR_TURN
+                message = "现在不是你的回合，请等待其他玩家操作";
+                break;
+            case 16: // INVALID_ORDER
+                message = "卡牌放置顺序不符合语法规则，请重新选择位置";
+                break;
         }
         
         // 在微信小游戏环境中显示提示

@@ -1500,8 +1500,11 @@ class ProtobufManager {
     parseGameActionResponse(data) {
         // 检查数据是否为空
         if (!data) {
-            console.error('GameActionResponse数据为空');
-            return null;
+            console.log('GameActionResponse数据为空，可能是成功响应');
+            // 返回默认的成功响应
+            return {
+                ret: 0  // ErrorCode.OK
+            };
         }
         
         console.log('解析GameActionResponse，数据长度:', data.length);
