@@ -61,12 +61,18 @@ class GameRoom {
         this.handCardArea = new HandCardArea(canvas, this.ctx);
         this.handCardArea.onCardSelect((index, card, previousIndex) => {
             console.log(`[GameRoom] 选择了卡牌 ${index}: ${card.word}`);
-            // TODO: 处理卡牌选择逻辑
+            // 选牌后不需要特殊处理，直接在点击桌面序号时出牌
         });
         
         // 设置出牌回调
-        this.handCardArea.onCardPlayed = (cardIndex, card) => {
-            this.onPlayCard(cardIndex, card);
+        this.handCardArea.onCardPlayed = (cardIndex, card, position) => {
+            if (position !== undefined) {
+                // 如果提供了位置信息，使用指定位置出牌
+                this.playCardToPosition(cardIndex, card, position);
+            } else {
+                // 否则使用默认出牌方法
+                this.onPlayCard(cardIndex, card);
+            }
         };
         
         // 游戏状态
@@ -326,6 +332,7 @@ class GameRoom {
         }
     }
     
+    // 修改 handleClick 方法以处理桌面插入位置点击
     handleClick(x, y) {
         if (!this.isVisible) return;
         
@@ -337,20 +344,34 @@ class GameRoom {
                 return;
             }
             
-            // 检查是否点击在手牌区域
-            if (this.handCardArea && this.handCardArea.isVisible()) {
-                // 先检查是否点击了出牌按钮
-                if (this.handCardArea.playButton.visible) {
-                    const playButton = this.handCardArea.playButton;
-                    if (x >= playButton.x && x <= playButton.x + playButton.width &&
-                        y >= playButton.y && y <= playButton.y + playButton.height) {
-                        // 直接调用手牌区域的出牌方法
-                        this.handCardArea.onPlayCard();
+            // 检查是否点击了桌面插入位置标签
+            if (this.tableInsertPositions) {
+                for (let i = 0; i < this.tableInsertPositions.length; i++) {
+                    const pos = this.tableInsertPositions[i];
+                    const distance = Math.sqrt(Math.pow(x - pos.x, 2) + Math.pow(y - pos.y, 2));
+                    // 使用标签的半径来判断点击范围
+                    const radius = (pos.width || 20) / 2;
+                    if (distance <= radius) { // 点击在圆形标签内
+                        this.selectedInsertPosition = pos.position;
+                        console.log(`[GameRoom] 选择插入位置: ${pos.position}`);
+                        
+                        // 如果已经有选中的手牌，则直接出牌到该位置
+                        const selectedCard = this.handCardArea.getSelectedCard();
+                        if (selectedCard) {
+                            this.playCardToPosition(selectedCard.index, selectedCard.card, pos.position);
+                            // 清除手牌选择状态
+                            this.handCardArea.clearSelection();
+                        }
+                        
+                        this.render();
                         return;
                     }
                 }
-                
-                // 检查点击坐标是否在手牌区域内（但不在出牌按钮上）
+            }
+            
+            // 检查是否点击在手牌区域
+            if (this.handCardArea && this.handCardArea.isVisible()) {
+                // 检查点击坐标是否在手牌区域内
                 if (this.handCardArea.isInHandCardArea(x, y)) {
                     // 创建一个模拟的鼠标事件对象
                     const rect = this.canvas.getBoundingClientRect();
@@ -686,21 +707,26 @@ class GameRoom {
             }
         }
         
-        // 发送出牌消息到服务器
-        this.sendPlayCardMessage(cardIndex, card);
+        // 发送出牌消息到服务器（默认添加到桌面末尾）
+        const tableLength = this.tableCards ? this.tableCards.length : 0;
+        this.sendPlayCardMessage(cardIndex, card, tableLength);
     }
     
     // 发送出牌消息
-    sendPlayCardMessage(cardIndex, card) {
+    sendPlayCardMessage(cardIndex, card, position = null) {
         if (!this.networkManager) {
             console.error("NetworkManager未初始化");
             return;
         }
         
+        // 如果没有指定位置，默认添加到桌面末尾
+        const tableLength = this.tableCards ? this.tableCards.length : 0;
+        const targetIndex = position !== null ? position : tableLength;
+        
         // 创建出牌动作
         const placeCardAction = {
             cardId: cardIndex,
-            targetIndex: this.tableCards.length, // 暂时添加到桌面末尾
+            targetIndex: targetIndex,
             word: card.word,
             wordClass: card.wordClass
         };
@@ -950,6 +976,15 @@ class GameRoom {
         this.tableArea.x = centerX - this.tableArea.width / 2;
         this.tableArea.y = centerY - this.tableArea.height / 2;
         
+        // 保存桌面区域信息供点击检测使用
+        this.tableInsertPositions = [];
+        
+        // 卡牌和间距设置
+        const cardWidth = 50;
+        const cardHeight = 30;
+        const cardSpacing = 30;
+        const lineSpacing = 20; // 行间距
+        
         if (this.tableCards.length === 0) {
             // 绘制空桌面
             this.ctx.strokeStyle = '#666';
@@ -963,6 +998,9 @@ class GameRoom {
             this.ctx.textAlign = 'center';
             this.ctx.textBaseline = 'middle';
             this.ctx.fillText('桌面 - 暂无卡牌', centerX, centerY);
+            
+            // 绘制起始插入位置标签 (0) - 居中显示并放大
+            this.drawInsertPosition(0, centerX, this.tableArea.y + this.tableArea.height / 2, true);
             return;
         }
         
@@ -981,32 +1019,63 @@ class GameRoom {
         this.ctx.textBaseline = 'top';
         this.ctx.fillText('桌面', this.tableArea.x + this.tableArea.width / 2, this.tableArea.y + 5);
         
-        // 绘制桌面卡牌
-        const cardWidth = 50;
-        const cardHeight = 30;
-        const cardSpacing = 5;
-        const startX = this.tableArea.x + 10;
-        const startY = this.tableArea.y + 30;
+        // 计算每行能容纳的卡牌数量
+        const maxCardsPerRow = Math.max(1, Math.floor((this.tableArea.width - 40) / (cardWidth + cardSpacing)));
         
-        this.tableCards.forEach((card, index) => {
-            const cardX = startX + (index % 7) * (cardWidth + cardSpacing);
-            const cardY = startY + Math.floor(index / 7) * (cardHeight + cardSpacing);
+        // 按行分组卡牌
+        const rows = [];
+        for (let i = 0; i < this.tableCards.length; i += maxCardsPerRow) {
+            rows.push(this.tableCards.slice(i, Math.min(i + maxCardsPerRow, this.tableCards.length)));
+        }
+        
+        // 计算所有行的总高度
+        const totalHeight = rows.length * cardHeight + (rows.length - 1) * lineSpacing;
+        // 计算起始Y坐标以实现垂直居中
+        const startY = this.tableArea.y + (this.tableArea.height - totalHeight) / 2 + cardHeight / 2;
+        
+        // 绘制每行卡牌
+        rows.forEach((row, rowIndex) => {
+            // 计算当前行的总宽度
+            const rowWidth = row.length * cardWidth + (row.length - 1) * cardSpacing;
+            // 计算当前行的起始X坐标以实现居中对齐
+            const startX = this.tableArea.x + (this.tableArea.width - rowWidth) / 2;
+            const currentY = startY + rowIndex * (cardHeight + lineSpacing);
             
-            // 绘制卡牌背景
-            this.ctx.fillStyle = '#4CAF50';
-            this.ctx.fillRect(cardX, cardY, cardWidth, cardHeight);
+            // 计算当前行的起始位置索引
+            const rowStartIndex = rowIndex * maxCardsPerRow;
             
-            // 绘制卡牌边框
-            this.ctx.strokeStyle = '#2e7d32';
-            this.ctx.lineWidth = 1;
-            this.ctx.strokeRect(cardX, cardY, cardWidth, cardHeight);
+            // 绘制行首插入位置标签（确保不超出左边界）
+            const firstPositionX = Math.max(this.tableArea.x + 15, startX - cardSpacing / 2);
+            this.drawInsertPosition(rowStartIndex, firstPositionX, currentY);
             
-            // 绘制卡牌文字
-            this.ctx.fillStyle = '#fff';
-            this.ctx.font = '12px Arial';
-            this.ctx.textAlign = 'center';
-            this.ctx.textBaseline = 'middle';
-            this.ctx.fillText(card.word, cardX + cardWidth / 2, cardY + cardHeight / 2);
+            // 绘制当前行的卡牌
+            row.forEach((card, colIndex) => {
+                const cardX = startX + colIndex * (cardWidth + cardSpacing);
+                const cardY = currentY - cardHeight / 2;
+                const globalIndex = rowStartIndex + colIndex;
+                
+                // 绘制卡牌背景
+                this.ctx.fillStyle = '#4CAF50';
+                this.ctx.fillRect(cardX, cardY, cardWidth, cardHeight);
+                
+                // 绘制卡牌边框
+                this.ctx.strokeStyle = '#2e7d32';
+                this.ctx.lineWidth = 1;
+                this.ctx.strokeRect(cardX, cardY, cardWidth, cardHeight);
+                
+                // 绘制卡牌文字
+                this.ctx.fillStyle = '#fff';
+                this.ctx.font = '12px Arial';
+                this.ctx.textAlign = 'center';
+                this.ctx.textBaseline = 'middle';
+                this.ctx.fillText(card.word, cardX + cardWidth / 2, cardY + cardHeight / 2);
+                
+                // 绘制下一个插入位置标签（确保不超出右边界）
+                const nextPositionX = cardX + cardWidth + cardSpacing / 2;
+                if (nextPositionX <= this.tableArea.x + this.tableArea.width - 15) {
+                    this.drawInsertPosition(globalIndex + 1, nextPositionX, currentY);
+                }
+            });
         });
         
         // 绘制当前句子
@@ -1021,6 +1090,37 @@ class GameRoom {
         }
     }
 
+    // 绘制插入位置标签
+    drawInsertPosition(position, x, y, isLarge = false) {
+        // 保存插入位置信息供点击检测使用
+        this.tableInsertPositions.push({
+            position: position,
+            x: x,
+            y: y,
+            width: isLarge ? 30 : 20,
+            height: isLarge ? 30 : 20
+        });
+        
+        // 绘制圆形标签
+        const radius = isLarge ? 15 : 10;
+        this.ctx.fillStyle = '#FF9800';
+        this.ctx.beginPath();
+        this.ctx.arc(x, y, radius, 0, 2 * Math.PI);
+        this.ctx.fill();
+        
+        // 绘制边框
+        this.ctx.strokeStyle = '#F57C00';
+        this.ctx.lineWidth = 1;
+        this.ctx.stroke();
+        
+        // 绘制数字
+        this.ctx.fillStyle = '#fff';
+        this.ctx.font = isLarge ? '16px Arial' : '12px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(position.toString(), x, y);
+    }
+    
     // 绘制弃牌认输按钮
     drawGameExitButton() {
         const buttonWidth = 120;
@@ -1121,6 +1221,72 @@ class GameRoom {
                 this.ctx.fillText('请等待其他玩家出牌', centerX, 200); // 从160调整到200
             }
         }
+    }
+    
+    // 添加新的出牌方法，支持指定位置
+    playCardToPosition(cardIndex, card, position) {
+        console.log(`[GameRoom] 出牌到位置: 索引=${cardIndex}, 卡牌=${card.word}, 位置=${position}`);
+        
+        // 检查是否轮到自己
+        const gameState = GameStateManager.gameState;
+        if (gameState && gameState.gameState) {
+            const currentTurn = gameState.gameState.currentTurn;
+            const players = gameState.gameState.players || [];
+            const currentPlayer = players[currentTurn];
+            const userInfo = GameStateManager.getUserInfo();
+            
+            if (!currentPlayer || currentPlayer.id !== userInfo.uid) {
+                console.log('[GameRoom] 不是你的回合，无法出牌');
+                
+                // 显示提示信息
+                if (typeof wx !== 'undefined') {
+                    wx.showToast({
+                        title: '不是你的回合',
+                        icon: 'none',
+                        duration: 2000
+                    });
+                } else {
+                    alert('不是你的回合，请等待其他玩家出牌');
+                }
+                return;
+            }
+        }
+        
+        // 发送出牌消息到服务器，包含位置信息
+        this.sendPlayCardMessage(cardIndex, card, position);
+        
+        // 清除选中的插入位置
+        this.selectedInsertPosition = undefined;
+    }
+    
+    // 修改发送出牌消息方法，支持指定位置
+    sendPlayCardMessage(cardIndex, card, position = null) {
+        if (!this.networkManager) {
+            console.error("NetworkManager未初始化");
+            return;
+        }
+        
+        // 如果没有指定位置，默认添加到桌面末尾
+        const tableLength = this.tableCards ? this.tableCards.length : 0;
+        const targetIndex = position !== null ? position : tableLength;
+        
+        // 创建出牌动作
+        const placeCardAction = {
+            cardId: cardIndex,
+            targetIndex: targetIndex,
+            word: card.word,
+            wordClass: card.wordClass
+        };
+        
+        console.log(`[GameRoom] 发送出牌消息:`, placeCardAction);
+        
+        // 通过NetworkManager发送PLACE_CARD动作
+        this.networkManager.sendGameAction({
+            actionType: 'PLACE_CARD',
+            actionDetail: placeCardAction
+        });
+        
+        console.log(`[GameRoom] 出牌请求已发送到服务器`);
     }
 }
 
