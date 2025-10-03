@@ -357,6 +357,9 @@ class NetworkManager {
                 case this.protobuf.MESSAGE_IDS.GET_READY_RESPONSE:
                     this.handleGetReadyResponse(msgData);
                     break;
+                case this.protobuf.MESSAGE_IDS.GAME_ACTION_RESPONSE:
+                    this.handleGameActionResponse(msgData);
+                    break;
                 case this.protobuf.MESSAGE_IDS.GAME_ACTION_NOTIFICATION:
                     this.handleGameActionNotification(msgData);
                     break;
@@ -455,6 +458,53 @@ class NetworkManager {
         const finalPacket = this.protobuf.createLeaveRoomRequest(this.userUid);
         this.sendWebSocketMessage(finalPacket);
         this.currentRoomId = "";
+    }
+    
+    // 发送游戏动作
+    sendGameAction(action) {
+        if (!this.currentRoomId) {
+            console.error("没有当前房间ID，无法发送游戏动作");
+            return;
+        }
+        
+        const currentUser = GameStateManager.getUserInfo();
+        if (!currentUser || !currentUser.uid) {
+            console.error("没有当前用户信息，无法发送游戏动作");
+            return;
+        }
+        
+        console.log(`[NetworkManager] 发送游戏动作:`, action);
+        
+        // 创建GameAction消息
+        const gameAction = {
+            playerId: currentUser.uid,
+            actionType: this.getActionTypeEnum(action.actionType),
+            timestamp: Date.now()
+        };
+        
+        // 根据动作类型添加具体动作数据
+        if (action.actionType === 'PLACE_CARD' && action.actionDetail) {
+            gameAction.placeCard = {
+                cardId: action.actionDetail.cardId,
+                targetIndex: action.actionDetail.targetIndex
+            };
+        }
+        
+        // 使用protobuf创建数据包
+        const finalPacket = this.protobuf.createPlayerActionRequest(gameAction);
+        this.sendWebSocketMessage(finalPacket);
+    }
+    
+    // 获取动作类型枚举值
+    getActionTypeEnum(actionType) {
+        const actionTypes = {
+            'PLACE_CARD': 1,
+            'SKIP_TURN': 2,
+            'AUTO_CHAT': 3,
+            'SURRENDER': 4,
+            'CHAR_MOVE': 5
+        };
+        return actionTypes[actionType] || 0;
     }
     
     // 发送准备请求
@@ -729,6 +779,51 @@ class NetworkManager {
             this.emit('ready_status_updated', response.isReady);
         } else {
             console.error("准备失败:", response.message);
+        }
+    }
+    
+    // 处理游戏动作响应
+    handleGameActionResponse(data) {
+        const response = this.protobuf.parseGameActionResponse(data);
+        if (!response) {
+            console.error("[Network] 解析GameActionResponse失败");
+            return;
+        }
+        
+        console.log("[Network] GAME_ACTION_RESPONSE 收到响应:", response);
+        
+        // 检查响应结果
+        if (response.ret !== 0) {
+            // 如果操作失败，显示错误信息
+            const errorMessages = {
+                1: "无效参数",
+                2: "服务器错误",
+                3: "认证失败",
+                4: "未找到",
+                5: "已存在",
+                6: "不允许的操作",
+                7: "不支持的操作",
+                8: "超时",
+                9: "无效状态",
+                10: "无效动作",
+                11: "无效卡牌",
+                12: "无效房间",
+                13: "无效用户",
+                14: "玩家已在房间中"
+            };
+            
+            const errorMsg = errorMessages[response.ret] || "未知错误";
+            console.error("[Network] 游戏动作执行失败:", errorMsg);
+            
+            // 可以触发事件通知UI显示错误信息
+            this.emit('game_action_failed', {
+                errorCode: response.ret,
+                errorMessage: errorMsg
+            });
+        } else {
+            console.log("[Network] 游戏动作执行成功");
+            // 可以触发事件通知UI更新
+            this.emit('game_action_success');
         }
     }
     

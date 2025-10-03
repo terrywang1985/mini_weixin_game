@@ -120,6 +120,15 @@ class GameRoom {
         this.networkManager.on('game_start_notification', (data) => {
             this.onGameStart(data);
         });
+        
+        // 监听游戏动作响应
+        this.networkManager.on('game_action_failed', (data) => {
+            this.onGameActionFailed(data);
+        });
+        
+        this.networkManager.on('game_action_success', () => {
+            this.onGameActionSuccess();
+        });
     }
     
     bindEvents() {
@@ -327,8 +336,35 @@ class GameRoom {
                 this.onSurrenderClick();
                 return;
             }
-            // 其他游戏内点击事件交给手牌区处理
-            return;
+            
+            // 检查是否点击在手牌区域
+            if (this.handCardArea && this.handCardArea.isVisible()) {
+                // 先检查是否点击了出牌按钮
+                if (this.handCardArea.playButton.visible) {
+                    const playButton = this.handCardArea.playButton;
+                    if (x >= playButton.x && x <= playButton.x + playButton.width &&
+                        y >= playButton.y && y <= playButton.y + playButton.height) {
+                        // 直接调用手牌区域的出牌方法
+                        this.handCardArea.onPlayCard();
+                        return;
+                    }
+                }
+                
+                // 检查点击坐标是否在手牌区域内（但不在出牌按钮上）
+                if (this.handCardArea.isInHandCardArea(x, y)) {
+                    // 创建一个模拟的鼠标事件对象
+                    const rect = this.canvas.getBoundingClientRect();
+                    const simulatedEvent = {
+                        clientX: x + rect.left,
+                        clientY: y + rect.top,
+                        preventDefault: () => {}
+                    };
+                    
+                    // 直接调用手牌区域的点击处理方法
+                    this.handCardArea.handleClick(simulatedEvent);
+                    return;
+                }
+            }
         }
         
         // 房间状态下的点击处理
@@ -625,6 +661,31 @@ class GameRoom {
     onPlayCard(cardIndex, card) {
         console.log(`[GameRoom] 出牌: 索引=${cardIndex}, 卡牌=${card.word}`);
         
+        // 检查是否轮到自己
+        const gameState = GameStateManager.gameState;
+        if (gameState && gameState.gameState) {
+            const currentTurn = gameState.gameState.currentTurn;
+            const players = gameState.gameState.players || [];
+            const currentPlayer = players[currentTurn];
+            const userInfo = GameStateManager.getUserInfo();
+            
+            if (!currentPlayer || currentPlayer.id !== userInfo.uid) {
+                console.log('[GameRoom] 不是你的回合，无法出牌');
+                
+                // 显示提示信息
+                if (typeof wx !== 'undefined') {
+                    wx.showToast({
+                        title: '不是你的回合',
+                        icon: 'none',
+                        duration: 2000
+                    });
+                } else {
+                    alert('不是你的回合，请等待其他玩家出牌');
+                }
+                return;
+            }
+        }
+        
         // 发送出牌消息到服务器
         this.sendPlayCardMessage(cardIndex, card);
     }
@@ -646,14 +707,13 @@ class GameRoom {
         
         console.log(`[GameRoom] 发送出牌消息:`, placeCardAction);
         
-        // TODO: 通过NetworkManager发送PLACE_CARD动作
-        // this.networkManager.sendGameAction({
-        //     actionType: 'PLACE_CARD',
-        //     actionDetail: placeCardAction
-        // });
+        // 通过NetworkManager发送PLACE_CARD动作
+        this.networkManager.sendGameAction({
+            actionType: 'PLACE_CARD',
+            actionDetail: placeCardAction
+        });
         
-        // 临时：直接添加到本地桌面（等待服务器响应时应该从服务器状态更新）
-        this.addCardToTable(card);
+        console.log(`[GameRoom] 出牌请求已发送到服务器`);
     }
     
     // 添加卡牌到桌面
@@ -755,6 +815,38 @@ class GameRoom {
         }
     }
     
+    onGameActionFailed(data) {
+        console.log("[GameRoom] 游戏动作失败:", data);
+        
+        // 显示错误提示
+        let message = "操作失败";
+        if (data && data.errorMessage) {
+            message = data.errorMessage;
+        }
+        
+        // 特殊处理不是回合玩家的情况
+        if (data.errorCode === 10) { // INVALID_ACTION
+            message = "现在不是你的回合，请等待其他玩家操作";
+        }
+        
+        // 在微信小游戏环境中显示提示
+        if (typeof wx !== 'undefined' && wx.showToast) {
+            wx.showToast({
+                title: message,
+                icon: 'none',
+                duration: 2000
+            });
+        } else {
+            // 在浏览器环境中使用alert
+            alert(message);
+        }
+    }
+    
+    onGameActionSuccess() {
+        console.log("[GameRoom] 游戏动作成功");
+        // 可以在这里添加成功后的处理逻辑
+    }
+    
     // 更新画布尺寸
     updateCanvasSize() {
         if (this.isVisible) {
@@ -765,63 +857,94 @@ class GameRoom {
     
     // 绘制游戏中界面
     drawGameScreen() {
-        // 绘制游戏标题
+        // 绘制游戏标题 - 考虑刘海屏，向下移动
         this.ctx.fillStyle = this.config.textColor;
         this.ctx.font = 'bold 24px Arial';
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
         
         const centerX = this.canvas.width / 2;
-        const centerY = this.canvas.height / 2;
         
-        this.ctx.fillText('游戏进行中', centerX, centerY - 100);
+        this.ctx.fillText('游戏进行中', centerX, 70); // 从30改为70，避开刘海屏
         
-        // 显示房间信息
+        // 显示房间信息 - 向下移动
         this.ctx.font = '18px Arial';
         this.ctx.fillStyle = '#666';
-        this.ctx.fillText(`房间: ${this.roomInfo ? this.roomInfo.name : this.roomId}`, centerX, centerY - 60);
+        this.ctx.fillText(`房间: ${this.roomInfo ? this.roomInfo.name : this.roomId}`, centerX, 100);
         
-        // 显示玩家列表
+        // 显示玩家列表 - 向下移动
         this.ctx.font = '16px Arial';
         this.ctx.fillStyle = this.config.textColor;
-        this.ctx.fillText('参与玩家:', centerX, centerY - 20);
+        this.ctx.fillText('参与玩家:', centerX, 130);
         
-        // 显示玩家名单
+        // 显示玩家名单 - 向下移动
         const players = this.players || [];
-        let yOffset = centerY + 10;
-        
-        players.forEach((player, index) => {
-            this.ctx.font = '14px Arial';
+        let playerText = players.map((player, index) => {
             const userInfo = GameStateManager.getUserInfo();
-            this.ctx.fillStyle = player.uid === userInfo.uid ? '#4CAF50' : '#666';
-            const playerText = `${index + 1}. ${player.name || player.nickname || 'Unknown'}`;
-            this.ctx.fillText(playerText, centerX, yOffset);
-            yOffset += 25;
-        });
+            const name = player.name || player.nickname || 'Unknown';
+            return player.uid === userInfo.uid ? `[${name}]` : name;
+        }).join(' | ');
         
-        // 绘制游戏提示
-        this.ctx.font = '16px Arial';
-        this.ctx.fillStyle = '#999';
-        this.ctx.fillText('等待游戏服务器响应...', centerX, centerY + 150);
+        this.ctx.font = '14px Arial';
+        this.ctx.fillStyle = '#4CAF50';
+        this.ctx.fillText(playerText, centerX, 155);
         
-        // 绘制桌面卡牌
+        // 显示当前回合信息
+        this.drawCurrentTurnInfo();
+        
+        // 绘制桌面卡牌 - 放在中央区域
         this.drawTableCards();
         
         // 可以添加退出游戏按钮
         this.drawGameExitButton();
     }
     
+    // 绘制当前回合信息
+    drawCurrentTurnInfo() {
+        const gameState = GameStateManager.gameState;
+        if (!gameState || !gameState.gameState) return;
+        
+        const currentTurn = gameState.gameState.currentTurn;
+        const players = gameState.gameState.players || [];
+        const currentPlayer = players[currentTurn];
+        
+        if (currentPlayer) {
+            const centerX = this.canvas.width / 2;
+            this.ctx.font = '16px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            
+            const userInfo = GameStateManager.getUserInfo();
+            const isMyTurn = currentPlayer.id === userInfo.uid;
+            
+            this.ctx.fillStyle = isMyTurn ? '#4CAF50' : '#FFA726';
+            
+            const turnText = isMyTurn ? '轮到你出牌' : `轮到 ${currentPlayer.name || 'Unknown'} 出牌`;
+            this.ctx.fillText(turnText, centerX, 180); // 从140调整为180
+            
+            // 如果不是自己的回合，显示提示
+            if (!isMyTurn) {
+                this.ctx.font = '14px Arial';
+                this.ctx.fillStyle = '#999';
+                this.ctx.fillText('请等待其他玩家出牌', centerX, 200); // 从160调整为200
+            }
+        }
+    }
+    
     // 绘制桌面卡牌
     drawTableCards() {
+        // 计算桌面区域 - 考虑刘海屏调整后的位置
+        const centerX = this.canvas.width / 2;
+        const centerY = this.canvas.height / 2 - 40; // 从-60调整为-40，给上方更多空间
+        this.tableArea.x = centerX - this.tableArea.width / 2;
+        this.tableArea.y = centerY - this.tableArea.height / 2;
+        
         if (this.tableCards.length === 0) {
             // 绘制空桌面
-            const centerX = this.canvas.width / 2;
-            const centerY = this.canvas.height / 2 - 50;
-            
             this.ctx.strokeStyle = '#666';
             this.ctx.lineWidth = 2;
             this.ctx.setLineDash([5, 5]);
-            this.ctx.strokeRect(centerX - 200, centerY - 50, 400, 100);
+            this.ctx.strokeRect(this.tableArea.x, this.tableArea.y, this.tableArea.width, this.tableArea.height);
             this.ctx.setLineDash([]);
             
             this.ctx.fillStyle = '#666';
@@ -831,12 +954,6 @@ class GameRoom {
             this.ctx.fillText('桌面 - 暂无卡牌', centerX, centerY);
             return;
         }
-        
-        // 计算桌面区域
-        const centerX = this.canvas.width / 2;
-        const centerY = this.canvas.height / 2 - 50;
-        this.tableArea.x = centerX - this.tableArea.width / 2;
-        this.tableArea.y = centerY - this.tableArea.height / 2;
         
         // 绘制桌面背景
         this.ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
@@ -960,6 +1077,39 @@ class GameRoom {
         
         // 重新渲染界面
         this.render();
+        
+        // 更新当前回合信息
+        this.updateCurrentTurnInfo(gameStateData.gameState);
+    }
+    
+    // 更新当前回合信息
+    updateCurrentTurnInfo(gameState) {
+        if (!gameState) return;
+        
+        const currentTurn = gameState.currentTurn;
+        const players = gameState.players || [];
+        const currentPlayer = players[currentTurn];
+        
+        if (currentPlayer) {
+            const centerX = this.canvas.width / 2;
+            this.ctx.font = '16px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            
+            const userInfo = GameStateManager.getUserInfo();
+            const isMyTurn = currentPlayer.id === userInfo.uid;
+            
+            this.ctx.fillStyle = isMyTurn ? '#4CAF50' : '#FFA726';
+            const turnText = isMyTurn ? '轮到你出牌' : `轮到 ${currentPlayer.name || 'Unknown'} 出牌`;
+            this.ctx.fillText(turnText, centerX, 180); // 从140调整到180
+            
+            // 如果不是自己的回合，显示提示
+            if (!isMyTurn) {
+                this.ctx.font = '14px Arial';
+                this.ctx.fillStyle = '#999';
+                this.ctx.fillText('请等待其他玩家出牌', centerX, 200); // 从160调整到200
+            }
+        }
     }
 }
 

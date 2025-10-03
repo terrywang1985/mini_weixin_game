@@ -182,6 +182,12 @@ func (room *BattleRoom) Run() {
 }
 
 func (room *BattleRoom) HandlePlayerCommand(cmd Command) {
+	// 确保Command不为nil
+	if cmd.Action == nil {
+		slog.Error("[Battle] Action is nil", "player_id", cmd.PlayerID)
+		return
+	}
+
 	// ===========================================
 	// Room层面处理：跨游戏状态的功能
 	// ===========================================
@@ -209,10 +215,16 @@ func (room *BattleRoom) HandlePlayerCommand(cmd Command) {
 		return
 	}
 
-	// 游戏层面的操作（卡牌、回合等）
-	success := room.Game.HandleAction(cmd.PlayerID, cmd.Action)
-	if success {
-		room.BroadcastGameState()
+	// 确保Game实例有效后再调用HandleAction
+	if room.Game != nil {
+		// 游戏层面的操作（卡牌、回合等）
+		success := room.Game.HandleAction(cmd.PlayerID, cmd.Action)
+		if success {
+			room.BroadcastGameState()
+		}
+	} else {
+		slog.Error("[Battle] Game instance is nil when handling action",
+			"action_type", cmd.Action.ActionType, "player_id", cmd.PlayerID)
 	}
 }
 
@@ -226,6 +238,13 @@ func (room *BattleRoom) handleCharMoveInRoom(cmd Command) {
 	if !exists {
 		room.PlayersMutex.Unlock()
 		slog.Error("[Battle] Player not in room", "player_id", cmd.PlayerID, "room_id", room.BattleID)
+		return
+	}
+
+	// 确保Action和CharMove不为nil
+	if cmd.Action == nil {
+		room.PlayersMutex.Unlock()
+		slog.Error("[Battle] Action is nil", "player_id", cmd.PlayerID)
 		return
 	}
 
@@ -362,6 +381,12 @@ func (room *BattleRoom) GetPlayerList() []*pb.RoomPlayer {
 
 // BroadcastPlayerPosition 广播玩家位置更新
 func (room *BattleRoom) BroadcastPlayerPosition(playerID uint64, moveAction *pb.CharacterMoveAction) {
+	// 确保moveAction不为nil
+	if moveAction == nil {
+		slog.Error("MoveAction is nil in BroadcastPlayerPosition", "player_id", playerID)
+		return
+	}
+
 	slog.Info("Broadcasting player position update", "room_id", room.BattleID, "player_id", playerID,
 		"from_x", moveAction.FromX, "from_y", moveAction.FromY, "to_x", moveAction.ToX, "to_y", moveAction.ToY)
 

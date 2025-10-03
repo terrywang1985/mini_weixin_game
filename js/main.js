@@ -34,6 +34,10 @@ export default class Main {
     this.isLoading = true;
     this.loadingMessage = "正在连接服务器...";
     
+    // 防止错误日志刷屏的防抖机制
+    this.lastErrorLogTime = 0;
+    this.errorLogInterval = 5000; // 5秒内最多输出一次错误日志
+    
     this.init();
     this.bindEvents();
     this.startGameLoop();
@@ -376,7 +380,7 @@ export default class Main {
     }
 
     if (!this.currentPage) {
-      // 容错：如果已经在 IN_GAME，却没有设置 currentPage，尝试恢复
+      // 容错：如果已经在某个状态，却没有设置 currentPage，尝试恢复
       if (GameStateManager.currentState === GameStateManager.GAME_STATES.IN_GAME) {
         console.warn('[Recover] IN_GAME 状态下 currentPage 丢失，尝试自动恢复 gameRoom');
         this.currentPage = this.gameRoom;
@@ -385,13 +389,26 @@ export default class Main {
         console.warn('[Recover] IN_ROOM 状态下 currentPage 丢失，尝试自动恢复 gameRoom');
         this.currentPage = this.gameRoom;
         this.gameRoom.show();
+      } else if (GameStateManager.currentState === GameStateManager.GAME_STATES.MAIN_MENU) {
+        console.warn('[Recover] MAIN_MENU 状态下 currentPage 丢失，尝试自动恢复 mainMenu');
+        this.currentPage = this.mainMenu;
+        this.mainMenu.show();
+      } else if (GameStateManager.currentState === GameStateManager.GAME_STATES.ROOM_LIST) {
+        console.warn('[Recover] ROOM_LIST 状态下 currentPage 丢失，尝试自动恢复 roomList');
+        this.currentPage = this.roomList;
+        this.roomList.show();
       }
     }
 
     if (this.currentPage) {
       this.currentPage.render();
     } else {
-      console.warn('进入错误屏: currentPage仍为空, isLoading=', this.isLoading, ' state=', GameStateManager.currentState);
+      // 防止错误日志刷屏：最多5秒输出一次
+      const now = Date.now();
+      if (now - this.lastErrorLogTime > this.errorLogInterval) {
+        console.warn('进入错误屏: currentPage仍为空, isLoading=', this.isLoading, ' state=', GameStateManager.currentState);
+        this.lastErrorLogTime = now;
+      }
       this.renderErrorScreen();
     }
   }

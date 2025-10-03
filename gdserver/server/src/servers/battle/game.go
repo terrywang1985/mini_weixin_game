@@ -95,9 +95,20 @@ func (g *WordCardGame) HandleAction(playerID uint64, action *pb.GameAction) bool
 		return false
 	}
 
+	// 获取当前玩家的索引
+	currentPlayerIndex := g.getPlayerIndex(playerID)
+	
 	switch action.ActionType {
 	case pb.ActionType_PLACE_CARD:
 		log.Printf("[Battle] Handling PLACE_CARD action for player %d", playerID)
+		
+		// 检查是否轮到该玩家
+		if currentPlayerIndex != g.CurrentTurn {
+			log.Printf("[Battle] Not player %d's turn (current turn: %d, player index: %d)", 
+				playerID, g.CurrentTurn, currentPlayerIndex)
+			return false
+		}
+		
 		placeCard := action.GetPlaceCard()
 		cardIdx := int(placeCard.CardId)
 		if cardIdx < 0 || cardIdx >= len(player.Hand) {
@@ -108,18 +119,32 @@ func (g *WordCardGame) HandleAction(playerID uint64, action *pb.GameAction) bool
 		success := g.playCard(player, card, int(placeCard.TargetIndex))
 		if success {
 			g.PassCount = 0
-			log.Printf("[Battle] Card placed successfully by player %d", playerID)
+			// 成功出牌后，轮到下一个玩家
+			g.nextTurn()
+			log.Printf("[Battle] Card placed successfully by player %d, next turn: %d", playerID, g.CurrentTurn)
 			return true
 		}
 		log.Printf("[Battle] Failed to place card for player %d", playerID)
 	case pb.ActionType_SKIP_TURN:
 		log.Printf("[Battle] Handling SKIP_TURN action for player %d", playerID)
+		
+		// 检查是否轮到该玩家
+		if currentPlayerIndex != g.CurrentTurn {
+			log.Printf("[Battle] Not player %d's turn for skip (current turn: %d, player index: %d)", 
+				playerID, g.CurrentTurn, currentPlayerIndex)
+			return false
+		}
+		
 		g.PassCount++
+		// 跳过回合后，轮到下一个玩家
+		g.nextTurn()
+		
 		if g.PassCount >= len(g.Players) {
 			log.Printf("[Battle] All players passed, scoring and resetting")
 			g.scoreAndReset()
 			g.PassCount = 0
 		}
+		log.Printf("[Battle] Player %d skipped turn, next turn: %d", playerID, g.CurrentTurn)
 		return true
 	case pb.ActionType_CHAR_MOVE:
 		log.Printf("[Battle] Handling CHAR_MOVE action for player %d", playerID)
@@ -203,6 +228,12 @@ func (g *WordCardGame) EndGame() {
 
 // BroadcastPlayerPositionUpdate 广播玩家位置更新
 func (g *WordCardGame) BroadcastPlayerPositionUpdate(playerID uint64, moveAction *pb.CharacterMoveAction) {
+	// 确保moveAction不为nil
+	if moveAction == nil {
+		log.Printf("[Battle] MoveAction is nil in BroadcastPlayerPositionUpdate")
+		return
+	}
+
 	if g.Room == nil {
 		log.Printf("[Battle] Cannot broadcast position update: Room is nil")
 		return
@@ -347,4 +378,19 @@ func GameFactory(gameType GameType) Game {
 	default:
 		return nil
 	}
+}
+
+// getPlayerIndex 获取玩家在游戏中的索引位置
+func (g *WordCardGame) getPlayerIndex(playerID uint64) int {
+	for i, player := range g.Players {
+		if player.ID == playerID {
+			return i
+		}
+	}
+	return -1
+}
+
+// nextTurn 切换到下一个玩家的回合
+func (g *WordCardGame) nextTurn() {
+	g.CurrentTurn = (g.CurrentTurn + 1) % len(g.Players)
 }

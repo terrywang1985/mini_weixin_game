@@ -60,6 +60,12 @@ class ProtobufManager {
         return new Uint8Array(bytes);
     }
     
+    // 编码tag字段
+    encodeTag(fieldNumber, wireType) {
+        const tag = (fieldNumber << 3) | wireType;
+        return this.encodeVarint(tag);
+    }
+    
     // 编码字符串字段
     encodeStringField(fieldNumber, value) {
         if (!value) return new Uint8Array(0);
@@ -1407,6 +1413,132 @@ class ProtobufManager {
         return {
             cards,
             sentence
+        };
+    }
+    
+    // 创建玩家动作请求
+    createPlayerActionRequest(gameAction) {
+        this.ensureInitialized();
+        const messageData = this.encodePlayerActionRequest(gameAction);
+        return this.createMessage(this.MESSAGE_IDS.GAME_ACTION_REQUEST, messageData);
+    }
+    
+    // 编码玩家动作请求
+    encodePlayerActionRequest(gameAction) {
+        let encoded = [];
+        
+        // 字段1: action (GameAction) - 嵌套消息
+        const actionBytes = this.encodeGameAction(gameAction);
+        if (actionBytes.length > 0) {
+            encoded.push(...this.encodeTag(1, 2)); // 字段1，wire type 2
+            encoded.push(...this.encodeVarint(actionBytes.length));
+            encoded.push(...actionBytes);
+        }
+        
+        return new Uint8Array(encoded);
+    }
+    
+    // 编码GameAction消息
+    encodeGameAction(gameAction) {
+        // 检查参数是否为空
+        if (!gameAction) {
+            console.error("[ProtobufManager] encodeGameAction 接收到的参数为空");
+            return [];
+        }
+        
+        let encoded = [];
+        
+        // 字段1: player_id (uint64)
+        if (gameAction.playerId) {
+            encoded.push(...this.encodeTag(1, 0));
+            encoded.push(...this.encodeVarint(gameAction.playerId));
+        }
+        
+        // 字段2: action_type (ActionType enum)
+        if (gameAction.actionType !== undefined) {
+            encoded.push(...this.encodeTag(2, 0));
+            encoded.push(...this.encodeVarint(gameAction.actionType));
+        }
+        
+        // 字段3: timestamp (int64)
+        if (gameAction.timestamp) {
+            encoded.push(...this.encodeTag(3, 0));
+            encoded.push(...this.encodeVarint(gameAction.timestamp));
+        }
+        
+        // 字段4: place_card (PlaceCardAction) - oneof
+        if (gameAction.placeCard) {
+            const placeCardBytes = this.encodePlaceCardAction(gameAction.placeCard);
+            encoded.push(...this.encodeTag(4, 2));
+            encoded.push(...this.encodeVarint(placeCardBytes.length));
+            encoded.push(...placeCardBytes);
+        }
+        
+        return encoded;
+    }
+    
+    // 编码PlaceCardAction消息
+    encodePlaceCardAction(placeCard) {
+        let encoded = [];
+        
+        // 字段1: card_id (uint64)
+        if (placeCard.cardId !== undefined) {
+            encoded.push(...this.encodeTag(1, 0));
+            encoded.push(...this.encodeVarint(placeCard.cardId));
+        }
+        
+        // 字段2: target_index (int32)
+        if (placeCard.targetIndex !== undefined) {
+            encoded.push(...this.encodeTag(2, 0));
+            encoded.push(...this.encodeVarint(placeCard.targetIndex));
+        }
+        
+        return encoded;
+    }
+    
+    // 解析GameActionResponse
+    parseGameActionResponse(data) {
+        // 检查数据是否为空
+        if (!data) {
+            console.error('GameActionResponse数据为空');
+            return null;
+        }
+        
+        console.log('解析GameActionResponse，数据长度:', data.length);
+        
+        let offset = 0;
+        let ret = 0;
+        
+        while (offset < data.length) {
+            const tagResult = this.decodeVarint(data, offset);
+            const tag = tagResult.value;
+            offset = tagResult.nextOffset;
+            
+            const fieldNumber = tag >> 3;
+            const wireType = tag & 0x07;
+            
+            console.log('字段编号:', fieldNumber, '线类型:', wireType);
+            
+            if (fieldNumber === 1 && wireType === 0) {
+                // ret (ErrorCode)
+                const result = this.decodeVarint(data, offset);
+                ret = result.value;
+                offset = result.nextOffset;
+                console.log('错误码:', ret);
+            } else {
+                // 跳过未知字段
+                if (wireType === 0) {
+                    const result = this.decodeVarint(data, offset);
+                    offset = result.nextOffset;
+                } else if (wireType === 2) {
+                    const lengthResult = this.decodeVarint(data, offset);
+                    offset = lengthResult.nextOffset + lengthResult.value;
+                }
+            }
+        }
+        
+        return {
+            ret: ret
         };
     }
 }
