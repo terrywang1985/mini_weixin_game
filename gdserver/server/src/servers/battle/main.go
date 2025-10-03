@@ -390,13 +390,32 @@ func (s *BattleServer) PlayerActionRpc(ctx context.Context, req *pb.PlayerAction
 		return &pb.PlayerActionRpcResponse{Ret: pb.ErrorCode_INVALID_ROOM}, nil
 	}
 
-	// 将操作发送到房间的命令通道
-	room.CmdChan <- Command{
-		PlayerID: req.PlayerId,
-		Action:   req.Action,
+	// 创建一个通道来接收操作结果
+	resultChan := make(chan bool, 1)
+	
+	// 创建一个带结果通道的命令
+	cmd := CommandWithResult{
+		Command: Command{
+			PlayerID: req.PlayerId,
+			Action:   req.Action,
+		},
+		ResultChan: resultChan,
 	}
 
-	return &pb.PlayerActionRpcResponse{Ret: pb.ErrorCode_OK}, nil
+	// 将操作发送到房间的命令通道
+	room.CmdChanWithResult <- cmd
+
+	// 等待操作结果
+	select {
+	case success := <-resultChan:
+		if success {
+			return &pb.PlayerActionRpcResponse{Ret: pb.ErrorCode_OK}, nil
+		} else {
+			return &pb.PlayerActionRpcResponse{Ret: pb.ErrorCode_INVALID_ACTION}, nil
+		}
+	case <-ctx.Done():
+		return &pb.PlayerActionRpcResponse{Ret: pb.ErrorCode_TIMEOUT}, nil
+	}
 }
 
 // GetRoomListRpc 获取房间列表

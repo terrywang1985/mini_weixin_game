@@ -16,6 +16,7 @@ type BattleRoom struct {
 	GameType     GameType
 	ReadyPlayers map[uint64]bool
 	CmdChan      chan Command
+	CmdChanWithResult chan CommandWithResult
 	Players      map[uint64]*PlayerInfo
 	PlayersMutex sync.RWMutex
 }
@@ -35,6 +36,12 @@ type Command struct {
 	Action   *pb.GameAction
 }
 
+// CommandWithResult 带有结果通道的命令结构体
+type CommandWithResult struct {
+	Command
+	ResultChan chan bool
+}
+
 func NewBattleRoom(battleID string, server *BattleServer, gameType GameType) *BattleRoom {
 	rand.Seed(time.Now().UnixNano())
 
@@ -44,6 +51,7 @@ func NewBattleRoom(battleID string, server *BattleServer, gameType GameType) *Ba
 		GameType:     gameType,
 		ReadyPlayers: make(map[uint64]bool),
 		CmdChan:      make(chan Command, 100),
+		CmdChanWithResult: make(chan CommandWithResult, 100),
 		Players:      make(map[uint64]*PlayerInfo),
 	}
 
@@ -170,6 +178,14 @@ func (room *BattleRoom) Run() {
 			select {
 			case cmd := <-room.CmdChan:
 				room.HandlePlayerCommand(cmd)
+			case cmdWithResult := <-room.CmdChanWithResult:
+				success := room.HandlePlayerCommandWithResult(cmdWithResult.Command)
+				// 将结果发送回结果通道
+				select {
+				case cmdWithResult.ResultChan <- success:
+				default:
+					// 如果通道已满或关闭，忽略结果
+				}
 			case <-gameTicker.C:
 				if room.Game != nil && room.Game.IsGameOver() {
 					room.Game.EndGame()
@@ -225,6 +241,56 @@ func (room *BattleRoom) HandlePlayerCommand(cmd Command) {
 	} else {
 		slog.Error("[Battle] Game instance is nil when handling action",
 			"action_type", cmd.Action.ActionType, "player_id", cmd.PlayerID)
+	}
+}
+
+// HandlePlayerCommandWithResult 处理带结果的玩家命令
+func (room *BattleRoom) HandlePlayerCommandWithResult(cmd Command) bool {
+	// 确保Command不为nil
+	if cmd.Action == nil {
+		slog.Error("[Battle] Action is nil", "player_id", cmd.PlayerID)
+		return false
+	}
+
+	// ===========================================
+	// Room层面处理：跨游戏状态的功能
+	// ===========================================
+
+	switch cmd.Action.ActionType {
+	case pb.ActionType_CHAR_MOVE:
+		// 位置移动在Room层面处理（大厅、游戏中都需要）
+		room.handleCharMoveInRoom(cmd)
+		return true
+
+		// case pb.ActionType_AUTO_CHAT:
+		// 	// 聊天在Room层面处理（游戏前后都能聊天）
+		// 	room.handleChatInRoom(cmd)
+		// 	return true
+	}
+
+	// ===========================================
+	// Game层面处理：游戏逻辑相关的功能
+	// ===========================================
+
+	// 检查游戏是否已开始
+	if room.Game == nil {
+		slog.Warn("[Battle] Game not started yet, ignoring game action",
+			"action_type", cmd.Action.ActionType, "player_id", cmd.PlayerID)
+		return false
+	}
+
+	// 确保Game实例有效后再调用HandleAction
+	if room.Game != nil {
+		// 游戏层面的操作（卡牌、回合等）
+		success := room.Game.HandleAction(cmd.PlayerID, cmd.Action)
+		if success {
+			room.BroadcastGameState()
+		}
+		return success
+	} else {
+		slog.Error("[Battle] Game instance is nil when handling action",
+			"action_type", cmd.Action.ActionType, "player_id", cmd.PlayerID)
+		return false
 	}
 }
 
