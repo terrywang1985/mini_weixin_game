@@ -436,10 +436,10 @@ func (g *WordCardGame) CheckTurnTimeout() bool {
 
 // Update 游戏更新方法，处理游戏逻辑更新
 func (g *WordCardGame) Update() bool {
-	// 检查是否有玩家分数超过30分
+	// 检查是否有玩家分数超过20分
 	for _, p := range g.Players {
-		if p.Score >= 30 {
-			log.Printf("[Battle] Player %d has reached 30 points, game over", p.ID)
+		if p.Score >= 20 {
+			log.Printf("[Battle] Player %d has reached 20 points, game over", p.ID)
 			return false // 游戏结束
 		}
 	}

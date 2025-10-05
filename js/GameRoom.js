@@ -748,7 +748,7 @@ class GameRoom {
         const startX = 10; // 减小左边距适配390px画布
         const startY = 80; // 往下移动，避开刘海屏
         const panelWidth = 360; // 适配390px画布
-        const rowHeight = 35; // 增加行高以容纳两行信息
+        const rowHeight = 25; // 减小行高，改为单行显示
         
         // 绘制标题
         this.ctx.fillStyle = '#fff';
@@ -850,33 +850,31 @@ class GameRoom {
             const score = player.currentScore || player.current_score || player.score || 0;
             const wins = player.winCount !== undefined ? player.winCount : 0;
             
-            // 第一行：玩家ID
+            // 一行显示：玩家ID、积分和获胜次数
             this.ctx.fillStyle = isMe ? '#FFD700' : '#fff';
-            this.ctx.font = isCurrentPlayer ? 'bold 13px Arial' : '12px Arial';
+            this.ctx.font = isCurrentPlayer ? 'bold 12px Arial' : '11px Arial';
             this.ctx.textAlign = 'left';
-            this.ctx.textBaseline = 'top';
-            this.ctx.fillText(`玩家ID: ${playerId}`, startX, yPos);
+            this.ctx.textBaseline = 'middle';
             
-            // 第二行：积分和获胜次数
-            this.ctx.fillStyle = isMe ? '#FFD700' : '#ccc';
-            this.ctx.font = '11px Arial';
-            this.ctx.fillText(`${score}分  获胜: ${wins}次`, startX, yPos + 14);
+            // 构建完整的文本信息
+            const playerText = `玩家ID: ${playerId}    积分: ${score}分    获胜: ${wins}次`;
+            this.ctx.fillText(playerText, startX, yPos + rowHeight / 2);
             
             // 如果是当前出牌人，在右侧显示状态和倒计时
             if (isCurrentPlayer) {
                 // 显示当前回合状态
                 this.ctx.fillStyle = '#4CAF50';
-                this.ctx.font = 'bold 12px Arial';
+                this.ctx.font = 'bold 11px Arial';
                 this.ctx.textAlign = 'right';
                 const statusText = isMe ? '轮到你' : '出牌中';
-                this.ctx.fillText(statusText, startX + panelWidth - 50, yPos);
+                this.ctx.fillText(statusText, startX + panelWidth - 50, yPos + rowHeight / 2);
                 
                 // 显示倒计时
                 if (this.turnTimer && !this.skipTurnClicked) {
                     const timeLeft = this.currentTurnTimeLeft || 15;
                     this.ctx.fillStyle = '#FF5722';
-                    this.ctx.font = 'bold 11px Arial';
-                    this.ctx.fillText(`${timeLeft}s`, startX + panelWidth - 20, yPos + 14);
+                    this.ctx.font = 'bold 10px Arial';
+                    this.ctx.fillText(`${timeLeft}s`, startX + panelWidth - 20, yPos + rowHeight / 2);
                 }
             }
         });
