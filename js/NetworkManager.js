@@ -363,6 +363,9 @@ class NetworkManager {
                 case this.protobuf.MESSAGE_IDS.GAME_ACTION_NOTIFICATION:
                     this.handleGameActionNotification(msgData);
                     break;
+                case this.protobuf.MESSAGE_IDS.GAME_END_NOTIFICATION:
+                    this.handleGameEndNotification(msgData);
+                    break;
                 default:
                     console.log("未知的消息ID:", msgId);
             }
@@ -768,6 +771,21 @@ class NetworkManager {
         console.log('[Network] 已分发 game_start_notification 事件');
     }
     
+    // 处理游戏结束通知
+    handleGameEndNotification(data) {
+        const notification = this.protobuf.parseGameEndNotification(data);
+        if (!notification) {
+            console.error('[Network] 解析游戏结束通知失败: notification为空');
+            return;
+        }
+
+        console.log('[Network] 收到游戏结束通知:', notification);
+
+        // 发送事件供UI处理
+        this.emit('game_end_notification', notification);
+        console.log('[Network] 已分发 game_end_notification 事件');
+    }
+    
     // 处理准备响应
     handleGetReadyResponse(data) {
         const response = this.protobuf.parseGetReadyResponse(data);
@@ -795,40 +813,41 @@ class NetworkManager {
         // 检查响应结果
         if (response.ret !== 0) {
             // 如果操作失败，显示错误信息
-            const errorMessages = {
-                1: "无效参数",
-                2: "服务器错误",
-                3: "认证失败",
-                4: "未找到",
-                5: "已存在",
-                6: "不允许的操作",
-                7: "不支持的操作",
-                8: "超时",
-                9: "无效状态",
-                10: "无效动作",
-                11: "无效卡牌",
-                12: "无效房间",
-                13: "无效用户",
-                14: "玩家已在房间中",
-                15: "不是你的回合",
-                16: "卡牌放置顺序不符合语法规则"
-            };
-            
-            const errorMsg = errorMessages[response.ret] || "未知错误";
-            console.log("[Network] 游戏动作执行失败:", errorMsg);
-            
-            // 可以触发事件通知UI显示错误信息
-            this.emit('game_action_failed', {
-                errorCode: response.ret,
-                errorMessage: errorMsg
-            });
+        const errorMessages = {
+            0: "成功",
+            1: "无效参数",
+            2: "服务器错误",
+            3: "认证失败",
+            4: "未找到",
+            5: "已存在",
+            6: "不允许的操作",
+            7: "不支持的操作",
+            8: "超时",
+            9: "无效状态",
+            10: "无效动作",
+            11: "无效卡牌",
+            12: "无效房间",
+            13: "无效用户",
+            14: "玩家已在房间中",
+            15: "不是你的回合",
+            16: "卡牌放置顺序不符合语法规则"
+        };
+        
+        const errorMsg = errorMessages[response.ret] || "未知错误";
+        console.log("[Network] 游戏动作执行失败:", errorMsg);
+
+        // 可以触发事件通知UI显示错误信息
+        this.emit('game_action_failed', {
+            errorCode: response.ret,
+            errorMessage: errorMsg
+        });
         } else {
             console.log("[Network] 游戏动作执行成功");
             // 可以触发事件通知UI更新
             this.emit('game_action_success');
         }
     }
-    
+
     // 处理游戏状态通知
     handleGameStateNotification(data) {
         console.log("收到游戏状态通知");

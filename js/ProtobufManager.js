@@ -29,7 +29,8 @@ class ProtobufManager {
             GAME_ACTION_REQUEST: 20,
             GAME_ACTION_RESPONSE: 21,
             GAME_ACTION_NOTIFICATION: 22,
-            GAME_START_NOTIFICATION: 23
+            GAME_START_NOTIFICATION: 23,
+            GAME_END_NOTIFICATION: 24
         };
     }
     
@@ -1544,7 +1545,99 @@ class ProtobufManager {
             ret: ret
         };
     }
+
+    // 解析游戏结束通知
+    parseGameEndNotification(data) {
+        console.log('[Protobuf] 解析游戏结束通知，数据长度:', data ? data.length : 'null');
+        
+        if (!data || data.length === 0) {
+            console.log('[Protobuf] 游戏结束通知数据为空');
+            return null;
+        }
+
+        try {
+            let offset = 0;
+            let roomId = "";
+            let players = [];
+
+            while (offset < data.length) {
+                const tag = data[offset];
+                const fieldNumber = tag >> 3;
+                const wireType = tag & 0x07;
+                offset++;
+
+                console.log(`[Protobuf] 解析游戏结束通知字段: field=${fieldNumber}, wireType=${wireType}`);
+
+                switch (fieldNumber) {
+                    case 1: // room_id
+                        if (wireType === 2) {
+                            const lengthResult = this.decodeVarint(data, offset);
+                            offset = lengthResult.nextOffset;
+                            roomId = this.decodeString(data, offset, lengthResult.value);
+                            offset += lengthResult.value;
+                            console.log("[Protobuf] 游戏结束房间ID:", roomId);
+                        }
+                        break;
+                    case 2: // players
+                        if (wireType === 2) {
+                            const lengthResult = this.decodeVarint(data, offset);
+                            offset = lengthResult.nextOffset;
+                            const playerData = data.slice(offset, offset + lengthResult.value);
+                            const player = this.parseBattlePlayer(playerData);
+                            if (player) {
+                                players.push(player);
+                            }
+                            offset += lengthResult.value;
+                            console.log("[Protobuf] 解析到玩家信息");
+                        }
+                        break;
+                    default:
+                        // 跳过未知字段
+                        if (wireType === 0) {
+                            const result = this.decodeVarint(data, offset);
+                            offset = result.nextOffset;
+                        } else if (wireType === 2) {
+                            const lengthResult = this.decodeVarint(data, offset);
+                            offset = lengthResult.nextOffset + lengthResult.value;
+                        }
+                        break;
+                }
+            }
+
+            console.log('[Protobuf] 游戏结束通知解析完成:', { roomId, players });
+            return {
+                roomId,
+                players
+            };
+        } catch (error) {
+            console.error('[Protobuf] 解析游戏结束通知失败:', error);
+            return null;
+        }
+    }
+
 }
+
+// 错误码枚举定义
+const ErrorCode = {
+    OK: 0,
+    INVALID_PARAM: 1,
+    SERVER_ERROR: 2,
+    AUTH_FAILED: 3,
+    NOT_FOUND: 4,
+    ALREADY_EXISTS: 5,
+    NOT_ALLOWED: 6,
+    NOT_SUPPORTED: 7,
+    TIMEOUT: 8,
+    INVALID_STATE: 9,
+    INVALID_ACTION: 10,
+    INVALID_CARD: 11,
+    INVALID_ROOM: 12,
+    INVALID_USER: 13,
+    PLAYER_ALREADY_IN_ROOM: 14,
+    NOT_YOUR_TURN: 15,
+    INVALID_ORDER: 16
+};
 
 // 导出模块
 export default ProtobufManager;
+export { ErrorCode };

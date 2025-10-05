@@ -228,19 +228,8 @@ export default class Main {
     this.networkManager.on('room_created', (room) => {
       console.log("房间创建成功:", room);
       
-      // 显示房间ID给用户，让朋友可以加入
-      if (room && room.id) {
-        if (typeof wx !== 'undefined' && wx.showModal) {
-          wx.showModal({
-            title: '房间创建成功',
-            content: `房间ID: ${room.id}\n请把这个房间ID发给朋友，让他们加入游戏！`,
-            showCancel: false,
-            confirmText: '知道了'
-          });
-        } else {
-          alert(`房间创建成功！\n房间ID: ${room.id}\n请把这个房间ID发给朋友，让他们加入游戏！`);
-        }
-      }
+      // 不再显示房间创建成功的对话框，直接进入房间
+      console.log("房间已创建，ID:", room.id);
     });
     
     this.networkManager.on('room_joined', () => {

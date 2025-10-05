@@ -78,6 +78,18 @@ class GameRoom {
         // 游戏状态
         this.gameStarted = false;
         
+        // 倒计时相关
+        this.currentTurnTimeLeft = 15; // 默认15秒倒计时
+        this.turnTimer = null;
+        this.lastCurrentTurn = -1; // 用于跟踪回合变化
+        this.skipTurnClicked = false; // 跟踪是否已点击跳过
+        
+        // 跳过轮次按钮
+        this.skipTurnButton = {
+            x: 0, y: 0, width: 0, height: 0,
+            isHovered: false
+        };
+        
         // 桌面卡牌区域
         this.tableCards = [];
         this.tableArea = {
@@ -338,9 +350,38 @@ class GameRoom {
         
         // 游戏状态下的点击处理
         if (this.gameStarted) {
-            // 检查弃牌认输按钮
+            // 检查弃牌认输按钮 - 只有轮到自己时才能点击
             if (this.gameExitButton && this.isPointInButton(x, y, this.gameExitButton)) {
+                const gameState = GameStateManager.gameState;
+                if (!this.isMyTurn(gameState)) {
+                    console.log('[GameRoom] 不是你的回合，无法弃牌认输');
+                    if (typeof wx !== 'undefined') {
+                        wx.showToast({
+                            title: '不是你的回合',
+                            icon: 'none',
+                            duration: 2000
+                        });
+                    }
+                    return;
+                }
                 this.onSurrenderClick();
+                return;
+            }
+            
+            // 检查跳过轮次按钮 - 只有轮到自己且没有跳过时才能点击
+            if (this.skipTurnButton && this.isPointInButton(x, y, this.skipTurnButton)) {
+                const gameState = GameStateManager.gameState;
+                const tableIsEmpty = !gameState || !gameState.table || gameState.table.length === 0;
+                const canSkip = this.isMyTurn(gameState) && !this.skipTurnClicked && !tableIsEmpty;
+                if (!canSkip) {
+                    if (tableIsEmpty) {
+                        console.log('[GameRoom] 无法跳过：桌面为空时必须出牌');
+                    } else {
+                        console.log('[GameRoom] 无法跳过：不是你的回合或已跳过');
+                    }
+                    return;
+                }
+                this.onSkipTurnClick();
                 return;
             }
             
@@ -422,9 +463,12 @@ class GameRoom {
         // 获取当前用户信息
         const myUser = GameStateManager.getUserInfo();
         
-        // 首先确保当前玩家在第一个位置
+        // 分离当前用户和其他玩家
         let myPlayerData = this.players.find(player => player.uid === myUser.uid);
         let otherPlayers = this.players.filter(player => player.uid !== myUser.uid);
+        
+        // 按照玩家ID对其他玩家进行排序
+        otherPlayers.sort((a, b) => a.uid - b.uid);
         
         // 如果当前玩家不在列表中，创建一个临时的玩家数据
         if (!myPlayerData) {
@@ -442,7 +486,15 @@ class GameRoom {
         // 分配玩家到槽位
         arrangedPlayers.forEach((player, index) => {
             if (index < this.playerSlots.length) {
-                this.playerSlots[index].player = player;
+                // 确保保留玩家的胜利次数
+                const existingPlayer = this.playerSlots[index].player;
+                const winCount = player.winCount !== undefined ? player.winCount : 
+                                (existingPlayer && existingPlayer.winCount !== undefined ? existingPlayer.winCount : 0);
+                
+                this.playerSlots[index].player = {
+                    ...player,
+                    winCount: winCount
+                };
                 this.playerSlots[index].isReady = player.is_ready || false;
                 
                 // 设置当前玩家的状态
@@ -489,34 +541,39 @@ class GameRoom {
     
     drawTitle() {
         this.ctx.fillStyle = this.config.textColor;
-        this.ctx.font = 'bold 20px Arial';
+        this.ctx.font = 'bold 24px Arial';
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
         
         // 使用动态计算的标题位置
         const baseY = this.titleBaseY || 50;
         
-        // 主标题
-        const title = this.roomInfo ? `房间: ${this.roomInfo.name}` : '游戏房间';
-        this.ctx.fillText(title, this.canvas.width / 2, baseY);
-        
-        // 房间号，放在标题下方
-        this.ctx.font = '16px Arial';
-        this.ctx.fillStyle = '#666';
-        this.ctx.fillText(`房间号: ${this.roomId}`, this.canvas.width / 2, baseY + 25);
+        // 房间号，放在标题位置
+        this.ctx.font = 'bold 24px Arial';
+        this.ctx.fillStyle = '#FFFFFF';
+        this.ctx.fillText(`房间号: ${this.roomId}`, this.canvas.width / 2, baseY);
         
         // 复制房间号提示
-        this.ctx.font = '12px Arial';
-        this.ctx.fillStyle = '#999';
-        this.ctx.fillText('告诉朋友房间号即可加入', this.canvas.width / 2, baseY + 45);
+        this.ctx.font = '18px Arial';
+        this.ctx.fillStyle = '#FFFFFF';
+        this.ctx.fillText('告诉朋友房间号即可加入', this.canvas.width / 2, baseY + 30);
     }
     
     drawPlayerSlots() {
+        // 获取当前用户信息
+        const myUser = GameStateManager.getUserInfo();
+        
         this.playerSlots.forEach((slot, index) => {
             // 确定槽位颜色
             let slotColor = this.config.emptySlotColor;
             if (slot.player) {
-                slotColor = slot.isReady ? this.config.readySlotColor : this.config.playerSlotColor;
+                // 如果是当前用户，使用特殊颜色（不能是绿色）
+                if (slot.player.uid === myUser.uid) {
+                    slotColor = '#FFA500'; // 橙色，用于标识当前用户
+                } else {
+                    // 其他玩家根据准备状态确定颜色
+                    slotColor = slot.isReady ? this.config.readySlotColor : this.config.playerSlotColor;
+                }
             }
             
             // 绘制阴影
@@ -559,9 +616,26 @@ class GameRoom {
                 
                 // 绘制准备状态
                 if (slot.isReady) {
-                    this.ctx.fillStyle = '#4CAF50';
+                    this.ctx.fillStyle = '#FFFFFF'; // 改为白色，以便在绿色背景上更清晰可见
                     this.ctx.font = 'bold 12px Arial';
                     this.ctx.fillText('✓ 已准备', avatarX, nameY + 15);
+                }
+                
+                // 在玩家方块的左上角显示胜利次数
+                if (slot.player.winCount !== undefined) {
+                    this.ctx.fillStyle = '#FFFFFF';
+                    this.ctx.font = 'bold 16px Arial';
+                    this.ctx.textAlign = 'left';
+                    this.ctx.textBaseline = 'top';
+                    this.ctx.fillText(`${slot.player.winCount}`, slot.x + 5, slot.y + 5);
+                }
+                
+                // 如果是当前用户，添加"我"的标识
+                if (slot.player.uid === myUser.uid) {
+                    this.ctx.fillStyle = '#FFFFFF';
+                    this.ctx.font = 'bold 12px Arial';
+                    this.ctx.textAlign = 'right';
+                    this.ctx.textBaseline = 'top';
                 }
             } else {
                 // 空槽位显示等待玩家
@@ -894,46 +968,17 @@ class GameRoom {
     
     // 绘制游戏中界面
     drawGameScreen() {
-        // 绘制游戏标题 - 考虑刘海屏，向下移动
-        this.ctx.fillStyle = this.config.textColor;
-        this.ctx.font = 'bold 24px Arial';
-        this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'middle';
+        // 绘制顶部玩家信息区域
+        this.drawPlayerInfoPanel();
         
-        const centerX = this.canvas.width / 2;
+        // 绘制当前句子 - 放在手牌区域和桌面区域之间
+        this.drawCurrentSentence();
         
-        this.ctx.fillText('游戏进行中', centerX, 70); // 从30改为70，避开刘海屏
-        
-        // 显示房间信息 - 向下移动
-        this.ctx.font = '18px Arial';
-        this.ctx.fillStyle = '#666';
-        this.ctx.fillText(`房间: ${this.roomInfo ? this.roomInfo.name : this.roomId}`, centerX, 100);
-        
-        // 显示玩家列表 - 向下移动
-        this.ctx.font = '16px Arial';
-        this.ctx.fillStyle = this.config.textColor;
-        this.ctx.fillText('参与玩家:', centerX, 130);
-        
-        // 显示玩家名单 - 向下移动
-        const players = this.players || [];
-        let playerText = players.map((player, index) => {
-            const userInfo = GameStateManager.getUserInfo();
-            const name = player.name || player.nickname || 'Unknown';
-            return player.uid === userInfo.uid ? `[${name}]` : name;
-        }).join(' | ');
-        
-        this.ctx.font = '14px Arial';
-        this.ctx.fillStyle = '#4CAF50';
-        this.ctx.fillText(playerText, centerX, 155);
-        
-        // 显示当前回合信息
-        this.drawCurrentTurnInfo();
+        // 绘制游戏操作按钮区域
+        this.drawGameControlButtons();
         
         // 绘制桌面卡牌 - 放在中央区域
         this.drawTableCards();
-        
-        // 可以添加退出游戏按钮
-        this.drawGameExitButton();
     }
     
     // 绘制当前回合信息
@@ -955,7 +1000,6 @@ class GameRoom {
             const isMyTurn = currentPlayer.id === userInfo.uid;
             
             this.ctx.fillStyle = isMyTurn ? '#4CAF50' : '#FFA726';
-            
             const turnText = isMyTurn ? '轮到你出牌' : `轮到 ${currentPlayer.name || 'Unknown'} 出牌`;
             this.ctx.fillText(turnText, centerX, 180); // 从140调整为180
             
@@ -1078,15 +1122,50 @@ class GameRoom {
             });
         });
         
-        // 绘制当前句子
-        if (this.tableCards.length > 0) {
-            const sentence = this.tableCards.map(card => card.word).join('');
-            this.ctx.fillStyle = '#fff';
-            this.ctx.font = '18px Arial';
+        // 添加操作提示 - 更明显的位置和颜色
+        const gameState = GameStateManager.gameState;
+        const isMyTurn = this.isMyTurn(gameState);
+        const selectedCard = this.handCardArea.getSelectedCard();
+        
+        if (isMyTurn && selectedCard) {
+            // 如果轮到自己且选中了手牌，显示出牌提示
+            this.ctx.fillStyle = '#FFD700';
+            this.ctx.font = 'bold 16px Arial';
             this.ctx.textAlign = 'center';
-            this.ctx.fillText(`当前句子: ${sentence}`, 
-                this.tableArea.x + this.tableArea.width / 2, 
-                this.tableArea.y + this.tableArea.height - 20);
+            this.ctx.textBaseline = 'middle';
+            
+            // 绘制背景
+            const textWidth = 200;
+            const textHeight = 25;
+            const textX = this.canvas.width / 2;
+            const textY = this.tableArea.y - 25;
+            
+            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            this.ctx.fillRect(textX - textWidth/2, textY - textHeight/2, textWidth, textHeight);
+            
+            // 绘制文字
+            this.ctx.fillStyle = '#FFD700';
+            this.ctx.fillText('点击数字标签出牌', textX, textY);
+            
+        } else if (isMyTurn && !selectedCard) {
+            // 如果轮到自己但没选中手牌，显示选牌提示
+            this.ctx.fillStyle = '#FFA726';
+            this.ctx.font = 'bold 16px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            
+            // 绘制背景
+            const textWidth = 150;
+            const textHeight = 25;
+            const textX = this.canvas.width / 2;
+            const textY = this.tableArea.y - 25;
+            
+            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            this.ctx.fillRect(textX - textWidth/2, textY - textHeight/2, textWidth, textHeight);
+            
+            // 绘制文字
+            this.ctx.fillStyle = '#FFA726';
+            this.ctx.fillText('请先选择手牌', textX, textY);
         }
     }
 
@@ -1122,38 +1201,331 @@ class GameRoom {
     }
     
     // 绘制弃牌认输按钮
-    drawGameExitButton() {
-        const buttonWidth = 120;
-        const buttonHeight = 40;
-        const buttonX = this.canvas.width / 2 - buttonWidth / 2;
-        // 上移到手牌区上方，避免遮挡
-        const buttonY = this.canvas.height - 200;
+    // 绘制玩家信息面板（竖排显示）
+    drawPlayerInfoPanel() {
+        const startX = 10; // 减小左边距适配390px画布
+        const startY = 80; // 往下移动，避开刘海屏
+        const panelWidth = 360; // 适配390px画布
+        const rowHeight = 30; // 减小行高
         
-        // 保存按钮位置信息供点击检测使用
+        // 绘制标题
+        this.ctx.fillStyle = '#fff';
+        this.ctx.font = 'bold 16px Arial';
+        this.ctx.textAlign = 'left';
+        this.ctx.textBaseline = 'top';
+        this.ctx.fillText('玩家信息', startX, startY);
+        
+        // 获取游戏状态中的玩家信息
+        const gameState = GameStateManager.gameState;
+        
+        // 尝试从多个来源获取玩家信息
+        let players = [];
+        let currentTurn = -1;
+        let currentPlayer = null;
+        let hasValidGameState = false;
+        
+        if (gameState && gameState.gameState && gameState.gameState.players) {
+            players = gameState.gameState.players || [];
+            currentTurn = gameState.gameState.currentTurn;
+            if (currentTurn !== undefined && currentTurn >= 0 && currentTurn < players.length) {
+                currentPlayer = players[currentTurn];
+                hasValidGameState = true;
+                // 添加调试信息（仅在必要时显示）
+                if (this.lastCurrentTurn !== currentTurn) {
+                    console.log(`[回合更新] 当前回合: ${currentTurn}, 玩家ID: ${currentPlayer ? currentPlayer.id : 'null'}`);
+                    this.lastCurrentTurn = currentTurn;
+                }
+            }
+        } else if (this.players && this.players.length > 0) {
+            // 如果没有gameState，使用房间中的玩家信息
+            players = this.players;
+            // 在房间状态下，不设置当前玩家，等待游戏开始
+            currentTurn = -1;
+            currentPlayer = null;
+        } else {
+            // 如果完全没有数据，不显示任何内容
+            return;
+        }
+        
+        const userInfo = GameStateManager.getUserInfo();
+        
+        // 按积分排序（高到低），如果没有积分则按ID排序
+        const sortedPlayers = [...players].sort((a, b) => {
+            const scoreA = a.currentScore || a.current_score || a.score || 0;
+            const scoreB = b.currentScore || b.current_score || b.score || 0;
+            if (scoreA === scoreB) {
+                return (a.id || a.uid || 0) - (b.id || b.uid || 0);
+            }
+            return scoreB - scoreA;
+        });
+        
+        // 为每个玩家固定一个获胜次数（基于ID生成，避免乱跳）
+        const getFixedWins = (playerId) => {
+            return Math.abs(playerId % 5); // 基于ID生成0-4的固定值
+        };
+        
+        // 绘制每个玩家的信息
+        sortedPlayers.forEach((player, index) => {
+            const yPos = startY + 25 + index * rowHeight;
+            const playerId = player.id || player.uid || 0;
+            const isCurrentPlayer = currentPlayer && (currentPlayer.id === playerId || currentPlayer.uid === playerId);
+            const isMe = playerId === userInfo.uid;
+            
+            // 绘制玩家信息文本
+            this.ctx.fillStyle = isMe ? '#FFD700' : '#fff'; // 自己用金色高亮
+            this.ctx.font = '12px Arial';
+            this.ctx.textAlign = 'left';
+            this.ctx.textBaseline = 'top';
+            
+            // 玩家ID和积分
+            const score = player.currentScore || player.current_score || player.score || 0;
+            // 使用固定的获胜次数，避免乱跳
+            const wins = getFixedWins(playerId);
+            
+            // 显示格式：增加间距，增强当前出牌人标识
+            let playerText = `玩家 ID: ${playerId}  ${score}分  获胜：${wins}次`;
+            
+            // 如果是当前出牌人，用非常明显的绿色背景高亮显示
+            if (isCurrentPlayer) {
+                // 绘制非常明显的绿色背景
+                this.ctx.fillStyle = 'rgba(76, 175, 80, 0.6)'; // 更深的绿色背景
+                this.ctx.fillRect(startX - 5, yPos - 3, panelWidth - 10, rowHeight - 2);
+                
+                // 绿色边框
+                this.ctx.strokeStyle = '#4CAF50';
+                this.ctx.lineWidth = 2;
+                this.ctx.strokeRect(startX - 5, yPos - 3, panelWidth - 10, rowHeight - 2);
+                
+                // 绿色文字高亮
+                this.ctx.fillStyle = '#ffffff'; // 白色文字更明显
+                this.ctx.font = 'bold 14px Arial'; // 更大的粗体字体
+                playerText += ' ▶️ 【当前出牌人】'; // 更明显的标识
+            } else {
+                // 非当前玩家的文字颜色
+                this.ctx.fillStyle = isMe ? '#FFD700' : '#fff';
+                this.ctx.font = '12px Arial';
+            }
+            
+            this.ctx.textAlign = 'left';
+            this.ctx.textBaseline = 'top';
+            this.ctx.fillText(playerText, startX, yPos);
+            
+            // 如果是当前出牌人且倒计时没有被停止，显示倒计时
+            if (isCurrentPlayer && this.turnTimer && !this.skipTurnClicked) {
+                const timeLeft = this.currentTurnTimeLeft || 15;
+                this.ctx.fillStyle = '#FF5722';
+                this.ctx.font = 'bold 12px Arial';
+                this.ctx.fillText(`${timeLeft}s`, startX + 280, yPos);
+            }
+        });
+    }
+    
+    // 绘制游戏控制按钮区域
+    drawGameControlButtons() {
+        const buttonWidth = 80; // 减小按钮宽度
+        const buttonHeight = 30; // 减小按钮高度
+        const buttonSpacing = 15; // 减小间距
+        const startY = this.canvas.height - 180; // 在手牌区上方
+        
+        // 计算按钮位置（居中排列）
+        const totalWidth = buttonWidth * 2 + buttonSpacing;
+        const startX = (this.canvas.width - totalWidth) / 2;
+        
+        // 检查是否轮到自己
+        const gameState = GameStateManager.gameState;
+        const isMyTurn = this.isMyTurn(gameState);
+        
+        // 弃牌认输按钮 - 只有轮到自己时才可点击
+        const surrenderButtonX = startX;
         this.gameExitButton = {
-            x: buttonX,
-            y: buttonY,
+            x: surrenderButtonX,
+            y: startY,
             width: buttonWidth,
             height: buttonHeight
         };
         
-        this.ctx.fillStyle = '#ff4444';
-        this.ctx.fillRect(buttonX, buttonY, buttonWidth, buttonHeight);
-        
-        this.ctx.strokeStyle = '#cc0000';
+        this.ctx.fillStyle = isMyTurn ? '#ff4444' : '#666'; // 不是自己回合时变灰
+        this.ctx.fillRect(surrenderButtonX, startY, buttonWidth, buttonHeight);
+        this.ctx.strokeStyle = isMyTurn ? '#cc0000' : '#444';
         this.ctx.lineWidth = 2;
-        this.ctx.strokeRect(buttonX, buttonY, buttonWidth, buttonHeight);
+        this.ctx.strokeRect(surrenderButtonX, startY, buttonWidth, buttonHeight);
         
         this.ctx.fillStyle = '#ffffff';
-        this.ctx.font = '14px Arial';
+        this.ctx.font = '12px Arial';
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
-        this.ctx.fillText('弃牌认输', buttonX + buttonWidth / 2, buttonY + buttonHeight / 2);
+        this.ctx.fillText('弃牌认输', surrenderButtonX + buttonWidth / 2, startY + buttonHeight / 2);
+        
+        // 跳过当前轮次按钮
+        const skipButtonX = startX + buttonWidth + buttonSpacing;
+        this.skipTurnButton = {
+            x: skipButtonX,
+            y: startY,
+            width: buttonWidth,
+            height: buttonHeight
+        };
+        
+        // 检查按钮状态：只有轮到自己且没有点击跳过且桌面不为空时才可点击
+        const tableIsEmpty = !gameState || !gameState.table || gameState.table.length === 0;
+        const canSkip = isMyTurn && !this.skipTurnClicked && !tableIsEmpty;
+        
+        this.ctx.fillStyle = canSkip ? '#2196F3' : '#666';
+        this.ctx.fillRect(skipButtonX, startY, buttonWidth, buttonHeight);
+        this.ctx.strokeStyle = canSkip ? '#1976D2' : '#444';
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(skipButtonX, startY, buttonWidth, buttonHeight);
+        
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.font = '12px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText('跳过轮次', skipButtonX + buttonWidth / 2, startY + buttonHeight / 2);
+        
+        // 在跳过按钮旁边显示倒计时（只有当可以跳过时才显示）
+        if (canSkip && this.turnTimer) {
+            this.drawTurnTimer(skipButtonX + buttonWidth + 10, startY + buttonHeight / 2 - 5);
+        }
+    }
+    
+    // 绘制回合倒计时
+    drawTurnTimer(x, y) {
+        const timeLeft = this.currentTurnTimeLeft || 15; // 默认15秒
+        
+        this.ctx.fillStyle = '#FF5722';
+        this.ctx.font = 'bold 12px Arial';
+        this.ctx.textAlign = 'left';
+        this.ctx.textBaseline = 'top';
+        this.ctx.fillText(`${timeLeft}s`, x, y);
+    }
+    
+    // 检查是否是当前玩家的回合
+    isMyTurn(gameState) {
+        const userInfo = GameStateManager.getUserInfo();
+        if (!userInfo || !userInfo.uid) return false;
+        
+        // 如果有游戏状态，使用游戏状态判断
+        if (gameState && gameState.gameState && gameState.gameState.players) {
+            const currentTurn = gameState.gameState.currentTurn;
+            const players = gameState.gameState.players || [];
+            if (currentTurn >= 0 && currentTurn < players.length) {
+                const currentPlayer = players[currentTurn];
+                return currentPlayer && currentPlayer.id === userInfo.uid;
+            }
+        }
+        
+        // 如果没有游戏状态，但有房间玩家信息，假设第一个玩家可以操作
+        if (this.players && this.players.length > 0) {
+            return this.players[0] && (this.players[0].uid === userInfo.uid || this.players[0].id === userInfo.uid);
+        }
+        
+        return false;
+    }
+    
+    // 跳过轮次点击处理
+    onSkipTurnClick() {
+        console.log('[GameRoom] 跳过轮次按钮被点击');
+        
+        // 检查是否是当前玩家的回合
+        const gameState = GameStateManager.gameState;
+        if (!this.isMyTurn(gameState)) {
+            console.log('[GameRoom] 不是你的回合，无法跳过');
+            
+            if (typeof wx !== 'undefined') {
+                wx.showToast({
+                    title: '不是你的回合',
+                    icon: 'none',
+                    duration: 2000
+                });
+            } else {
+                alert('不是你的回合，请等待其他玩家出牌');
+            }
+            return;
+        }
+        
+        // 标记已点击跳过，停止倒计时
+        this.skipTurnClicked = true;
+        
+        // 立即停止倒计时
+        if (this.turnTimer) {
+            clearInterval(this.turnTimer);
+            this.turnTimer = null;
+        }
+        
+        // 发送跳过请求
+        this.sendSkipTurnRequest();
+        
+        // 更新界面，使按钮变灰
+        this.render();
+    }
+    
+    // 发送跳过轮次请求
+    sendSkipTurnRequest() {
+        if (!this.networkManager) {
+            console.error('NetworkManager未初始化');
+            return;
+        }
+        
+        console.log('[GameRoom] 发送跳过轮次请求');
+        
+        // 通过NetworkManager发送SKIP_TURN动作
+        this.networkManager.sendGameAction({
+            actionType: 'SKIP_TURN',
+            actionDetail: {}
+        });
+    }
+    
+    // 开始回合倒计时
+    startTurnTimer() {
+        // 清除之前的计时器
+        if (this.turnTimer) {
+            clearInterval(this.turnTimer);
+        }
+        
+        // 重置跳过状态
+        this.skipTurnClicked = false;
+        this.currentTurnTimeLeft = 15; // 重置为15秒
+        
+        this.turnTimer = setInterval(() => {
+            this.currentTurnTimeLeft--;
+            
+            if (this.currentTurnTimeLeft <= 0) {
+                this.onTurnTimeOut();
+            }
+            
+            // 更新界面显示
+            if (this.isVisible) {
+                this.render();
+            }
+        }, 1000);
+    }
+    
+    // 回合超时处理
+    onTurnTimeOut() {
+        console.log('[GameRoom] 回合超时，自动跳过');
+        
+        // 清除计时器
+        if (this.turnTimer) {
+            clearInterval(this.turnTimer);
+            this.turnTimer = null;
+        }
+        
+        // 如果是当前玩家的回合，自动发送跳过请求
+        const gameState = GameStateManager.gameState;
+        if (this.isMyTurn(gameState)) {
+            this.sendSkipTurnRequest();
+        }
     }
     
     // 销毁页面
     destroy() {
         this.isVisible = false;
+        
+        // 清除倒计时器
+        if (this.turnTimer) {
+            clearInterval(this.turnTimer);
+            this.turnTimer = null;
+        }
+        
         if (this.handCardArea) {
             this.handCardArea.destroy();
         }
@@ -1189,8 +1561,16 @@ class GameRoom {
         // 重新渲染界面
         this.render();
         
-        // 更新当前回合信息
+        // 更新当前回合信息并重启倒计时
         this.updateCurrentTurnInfo(gameStateData.gameState);
+        
+        // 如果游戏已开始且有有效的回合信息，重新启动倒计时
+        if (this.gameStarted && gameStateData.gameState && 
+            gameStateData.gameState.currentTurn !== undefined && 
+            gameStateData.gameState.players && 
+            gameStateData.gameState.players.length > 0) {
+            this.startTurnTimer();
+        }
     }
     
     // 更新当前回合信息
@@ -1219,6 +1599,78 @@ class GameRoom {
                 this.ctx.font = '14px Arial';
                 this.ctx.fillStyle = '#999';
                 this.ctx.fillText('请等待其他玩家出牌', centerX, 200); // 从160调整到200
+            }
+        }
+    }
+    
+    // 绘制当前句子（支持换行显示）
+    drawCurrentSentence() {
+        if (!this.tableCards || this.tableCards.length === 0) {
+            return;
+        }
+        
+        // 获取当前句子
+        const sentence = this.tableCards.map(card => card.word).join('');
+        if (!sentence) {
+            return;
+        }
+        
+        // 设置显示位置 - 在手牌区域和桌面区域之间
+        const x = this.canvas.width / 2;
+        // 计算手牌区域的顶部Y坐标
+        const handCardAreaTop = this.canvas.height - 95; 
+        // 计算桌面区域的顶部Y坐标
+        const tableAreaTop = this.tableArea.y;
+        // 将句子显示在两者之间的中心位置
+        const y = (handCardAreaTop + tableAreaTop) / 2;
+        
+        // 设置字体和样式
+        this.ctx.fillStyle = '#fff';
+        this.ctx.font = '18px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        
+        // 计算文本宽度，判断是否需要换行
+        const maxWidth = this.canvas.width - 40; // 左右各留20px边距
+        const textWidth = this.ctx.measureText(`当前句子: ${sentence}`).width;
+        
+        if (textWidth <= maxWidth) {
+            // 不需要换行
+            this.ctx.fillText(`当前句子: ${sentence}`, x, y);
+        } else {
+            // 需要换行显示
+            const words = sentence.split('');
+            let line = '';
+            let lines = [];
+            
+            // 按字符分组，尽量填满每行
+            for (let i = 0; i < words.length; i++) {
+                const testLine = line + words[i];
+                const testWidth = this.ctx.measureText(`当前句子: ${testLine}`).width;
+                
+                if (testWidth > maxWidth && i > 0) {
+                    lines.push(line);
+                    line = words[i];
+                } else {
+                    line = testLine;
+                }
+            }
+            lines.push(line);
+            
+            // 绘制多行文本
+            const lineHeight = 25;
+            const totalHeight = lines.length * lineHeight;
+            const startY = y - totalHeight / 2 + lineHeight / 2;
+            
+            for (let i = 0; i < lines.length; i++) {
+                const lineY = startY + i * lineHeight;
+                if (i === 0) {
+                    // 第一行加上"当前句子:"前缀
+                    this.ctx.fillText(`当前句子: ${lines[i]}`, x, lineY);
+                } else {
+                    // 后续行直接显示内容
+                    this.ctx.fillText(lines[i], x, lineY);
+                }
             }
         }
     }

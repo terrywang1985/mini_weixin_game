@@ -315,34 +315,10 @@ class MainMenu {
     }
     
     showCreateRoomDialog() {
-        if (typeof wx !== 'undefined' && wx.showModal) {
-            // 微信小游戏环境，直接创建房间
-            wx.showModal({
-                title: '创建房间',
-                content: '将使用您的用户ID作为房间号，是否继续？',
-                success: (res) => {
-                    if (res.confirm) {
-                        // 使用默认房间名，后端会使用玩家ID作为房间ID
-                        const defaultName = `我的房间`;
-                        console.log("创建房间:", defaultName);
-                        this.networkManager.createRoom(defaultName);
-                    }
-                }
-            });
-        } else if (typeof prompt !== 'undefined') {
-            // 浏览器环境
-            const roomName = prompt("请输入房间名称:", "我的房间");
-            
-            if (roomName && roomName.trim()) {
-                console.log("创建房间:", roomName.trim());
-                this.networkManager.createRoom(roomName.trim());
-            }
-        } else {
-            // 其他环境，使用默认名称
-            const defaultName = "我的房间";
-            console.log("创建房间:", defaultName);
-            this.networkManager.createRoom(defaultName);
-        }
+        // 直接创建房间，不弹出对话框
+        const defaultName = `我的房间`;
+        console.log("创建房间:", defaultName);
+        this.networkManager.createRoom(defaultName);
     }
     
     showMessage(message) {

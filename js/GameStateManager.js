@@ -165,7 +165,30 @@ class GameStateManager {
         this.setGameState(this.GAME_STATES.IN_ROOM);
         console.log("游戏结束");
     }
-    
+
+    // 处理游戏结束通知
+    handleGameEnd(notification) {
+        console.log("处理游戏结束通知:", notification);
+        
+        // 更新玩家胜利次数
+        if (notification.players && notification.players.length > 0) {
+            // 更新玩家列表和胜利次数
+            this.currentRoom.playerList = notification.players.map(player => ({
+                uid: player.id,
+                nickname: player.name,
+                is_ready: player.isReady || false,
+                winCount: player.winCount || 0
+            }));
+        }
+        
+        // 退回到准备房间界面
+        this.endGame();
+        
+        // 通知UI更新
+        this.notifyRoomUpdate();
+        this.notifyPlayerUpdate();
+    }
+
     // 更新玩家位置
     updatePlayerPosition(playerId, position) {
         this.gameData.playerPositions.set(playerId, position);
