@@ -150,3 +150,32 @@ func (s *GameGRPCService) GameStartNotifyRpc(ctx context.Context, req *pb.GameSt
 		Ret: int32(pb.ErrorCode_OK),
 	}, nil
 }
+
+func (s *GameGRPCService) GameEndNotifyRpc(ctx context.Context, req *pb.GameEndNotify) (*pb.NotifyResponse, error) {
+	// 处理游戏结束通知逻辑
+	slog.Info("Received GameEndNotifyRpc", "room_id", req.GameEnd.RoomId)
+
+	//通过 被通知者id 找到玩家的连接
+	player, ok := GlobalManager.GetPlayerByUin(req.BeNotifiedUid)
+	if !ok {
+		slog.Error("Player not found for notification", "player_id", req.BeNotifiedUid)
+		return &pb.NotifyResponse{
+			Ret: int32(pb.ErrorCode_NOT_FOUND),
+		}, nil
+	}
+
+	noti := &pb.Message{
+		Id:          pb.MessageId_GAME_END_NOTIFICATION,
+		MsgSerialNo: -1,
+		ClientId:    "",
+		Data:        mustMarshal(req.GameEnd),
+	}
+
+	player.SendMessage(noti)
+
+	slog.Info("GameEndNotifyRpc processed", "be_notified_uid", req.BeNotifiedUid)
+
+	return &pb.NotifyResponse{
+		Ret: int32(pb.ErrorCode_OK),
+	}, nil
+}

@@ -10,15 +10,15 @@ import (
 )
 
 type BattleRoom struct {
-	BattleID     string
-	Server       *BattleServer
-	Game         Game
-	GameType     GameType
-	ReadyPlayers map[uint64]bool
-	CmdChan      chan Command
+	BattleID          string
+	Server            *BattleServer
+	Game              Game
+	GameType          GameType
+	ReadyPlayers      map[uint64]bool
+	CmdChan           chan Command
 	CmdChanWithResult chan CommandWithResult
-	Players      map[uint64]*PlayerInfo
-	PlayersMutex sync.RWMutex
+	Players           map[uint64]*PlayerInfo
+	PlayersMutex      sync.RWMutex
 }
 
 type PlayerInfo struct {
@@ -46,24 +46,23 @@ func NewBattleRoom(battleID string, server *BattleServer, gameType GameType) *Ba
 	rand.Seed(time.Now().UnixNano())
 
 	room := &BattleRoom{
-		BattleID:     battleID,
-		Server:       server,
-		GameType:     gameType,
-		ReadyPlayers: make(map[uint64]bool),
-		CmdChan:      make(chan Command, 100),
+		BattleID:          battleID,
+		Server:            server,
+		GameType:          gameType,
+		ReadyPlayers:      make(map[uint64]bool),
+		CmdChan:           make(chan Command, 100),
 		CmdChanWithResult: make(chan CommandWithResult, 100),
-		Players:      make(map[uint64]*PlayerInfo),
+		Players:           make(map[uint64]*PlayerInfo),
 	}
 
 	// 创建游戏实例
 	room.Game = GameFactory(gameType)
-	
+
 	// 设置房间引用（适用于所有游戏类型）
 	room.Game.SetRoomRef(room)
-	
+
 	return room
 }
-
 
 func (room *BattleRoom) AddPlayer(playerID uint64, name string) {
 	room.PlayersMutex.Lock()
@@ -91,6 +90,17 @@ func (room *BattleRoom) RemovePlayer(playerID uint64) {
 		delete(room.Players, playerID)
 		delete(room.ReadyPlayers, playerID) // 同时移除准备状态
 		slog.Info("Player removed from battle room", "room_id", room.BattleID, "player_id", playerID)
+
+		// 如果游戏正在进行中，需要更新游戏状态
+		if room.Game != nil {
+			// 使用接口方法移除玩家
+			if room.Game.RemovePlayer(playerID) {
+				slog.Info("Player removed from game", "player_id", playerID, "room_id", room.BattleID)
+			}
+
+			// 广播更新后的游戏状态
+			room.BroadcastGameState()
+		}
 	}
 }
 
@@ -110,8 +120,9 @@ func (room *BattleRoom) Stop() {
 }
 
 // SetPlayerReady 使用 presence 语义：
-//  - isReady=true  => 将玩家加入 ReadyPlayers（value 恒为 true）
-//  - isReady=false => 从 ReadyPlayers 删除该玩家
+//   - isReady=true  => 将玩家加入 ReadyPlayers（value 恒为 true）
+//   - isReady=false => 从 ReadyPlayers 删除该玩家
+//
 // 这样 AllPlayersReady 只需比较 map 长度与玩家数即可，无需遍历。
 func (room *BattleRoom) SetPlayerReady(playerID uint64, isReady bool) {
 	room.PlayersMutex.Lock()
@@ -156,7 +167,7 @@ func (room *BattleRoom) BroadcastGameState() {
 		slog.Warn("Cannot broadcast game state: Game is nil")
 		return
 	}
-	
+
 	state := room.Game.GetState()
 	slog.Info("Broadcasting game state", "current_turn", state.CurrentTurn, "players_count", len(state.Players))
 
@@ -187,10 +198,14 @@ func (room *BattleRoom) Run() {
 					// 如果通道已满或关闭，忽略结果
 				}
 			case <-gameTicker.C:
-				if room.Game != nil && room.Game.IsGameOver() {
-					room.Game.EndGame()
-					room.EndGame()
-					return
+				// 将游戏逻辑更新的职责交给game
+				if room.Game != nil {
+					if !room.Game.Update() {
+						room.Game.EndGame()
+						room.EndGame()
+						slog.Info("Game ended", "room_id", room.BattleID)
+						return
+					}
 				}
 			}
 		}

@@ -39,6 +39,7 @@ message BattlePlayer {
   string name = 2;
   repeated WordCard cards = 3;   // 手牌（例如：最多5张卡牌）
   int32 current_score = 4;     // 当前分数
+  int32 win_count = 5;         // 胜利次数
 }
 
 
@@ -100,6 +101,12 @@ message GameState {
   repeated BattlePlayer players = 1; // 当前玩家列表
   CardTable card_table = 2; // 当前卡牌桌面状态
   int32 current_turn = 3; // 当前轮到的玩家索引
+}
+
+//游戏结束通知
+message GameEndNotification {
+  string room_id = 1;
+  repeated BattlePlayer players = 2; // 包含胜利次数的玩家列表
 }
 
 //游戏状态通知

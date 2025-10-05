@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/signal"
 	pb "proto"
-	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -64,17 +63,17 @@ func main() {
 	server.startRoomGRPCServer(rpc.RoomServiceGRPCPort, server.InstanceID)
 
 	slog.Info("Battle server is running")
-	
+
 	// 设置优雅关闭
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	
+
 	<-c // 等待关闭信号
 	slog.Info("Shutting down Battle server...")
-	
+
 	// 关闭GameServer连接
 	server.CloseGameServerConnection()
-	
+
 	slog.Info("Battle server stopped")
 }
 
@@ -128,6 +127,7 @@ func (s *BattleServer) registerServiceDiscovery() {
 		}
 	}()
 }
+
 // getGameClient 获取GameServer客户端（懒加载连接）
 func (s *BattleServer) getGameClient() (pb.GameRpcServiceClient, error) {
 	s.connMutex.RLock()
@@ -173,7 +173,7 @@ func (s *BattleServer) getGameClient() (pb.GameRpcServiceClient, error) {
 func (s *BattleServer) CloseGameServerConnection() {
 	s.connMutex.Lock()
 	defer s.connMutex.Unlock()
-	
+
 	if s.gameConn != nil {
 		s.gameConn.Close()
 		s.gameConn = nil
@@ -214,7 +214,7 @@ func (s *BattleServer) CreateRoomRpc(ctx context.Context, req *pb.CreateRoomRpcR
 		return &pb.CreateRoomRpcResponse{Ret: pb.ErrorCode_PLAYER_ALREADY_IN_ROOM}, nil
 	}
 
-	roomID := strconv.FormatUint(req.Player.PlayerId, 10)
+	roomID, _ := s.RedisPool.GenerateBattleID()
 
 	// 创建新战斗房间
 	room := NewBattleRoom(roomID, s, GameType_WordCardGame)
@@ -392,7 +392,7 @@ func (s *BattleServer) PlayerActionRpc(ctx context.Context, req *pb.PlayerAction
 
 	// 创建一个通道来接收操作结果
 	resultChan := make(chan pb.ErrorCode, 1)
-	
+
 	// 创建一个带结果通道的命令
 	cmd := CommandWithResult{
 		Command: Command{

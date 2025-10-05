@@ -32,6 +32,9 @@ type Game interface {
 	IsGameOver() bool
 	EndGame()
 	SetRoomRef(room RoomInterface) // 设置房间引用
+
+	Update() bool
+	RemovePlayer(playerID uint64) bool
 }
 
 // Player 玩家结构体
@@ -62,11 +65,22 @@ type WordCardGame struct {
 	PassCount   int
 	// 添加房间引用用于广播
 	Room RoomInterface
+	// 添加倒计时相关字段
+	TurnStartTime time.Time     // 当前回合开始时间
+	TurnTimeout   time.Duration // 回合超时时间（15秒）
+	// 添加每个玩家的跳过状态跟踪
+	ConsecutivePasses []bool // 记录每个玩家是否在当前轮次中跳过
 }
 
 func (g *WordCardGame) Init(players []*Player) {
 	g.Players = players
 	g.Deck = loadDeck("../cfg/word_cards.json", 4)
+
+	g.TurnStartTime = time.Now()
+	g.TurnTimeout = 15 * time.Second
+
+	// 初始化每个玩家的跳过状态
+	g.ConsecutivePasses = make([]bool, len(players))
 }
 
 func (g *WordCardGame) Start() {
@@ -97,31 +111,36 @@ func (g *WordCardGame) HandleAction(playerID uint64, action *pb.GameAction) pb.E
 
 	// 获取当前玩家的索引
 	currentPlayerIndex := g.getPlayerIndex(playerID)
-	
+
 	switch action.ActionType {
 	case pb.ActionType_PLACE_CARD:
 		log.Printf("[Battle] Handling PLACE_CARD action for player %d", playerID)
-		
+
 		// 检查是否轮到该玩家
 		if currentPlayerIndex != g.CurrentTurn {
-			log.Printf("[Battle] Not player %d's turn (current turn: %d, player index: %d)", 
+			log.Printf("[Battle] Not player %d's turn (current turn: %d, player index: %d)",
 				playerID, g.CurrentTurn, currentPlayerIndex)
 			return pb.ErrorCode_NOT_YOUR_TURN
 		}
-		
+
 		placeCard := action.GetPlaceCard()
 		cardIdx := int(placeCard.CardId)
 		targetIndex := int(placeCard.TargetIndex)
-		
+
 		if cardIdx < 0 || cardIdx >= len(player.Hand) {
 			log.Printf("[Battle] Invalid card index: %d for player %d", cardIdx, playerID)
 			return pb.ErrorCode_INVALID_CARD
 		}
-		
+
 		card := player.Hand[cardIdx]
 		success := g.playCard(player, card, targetIndex)
 		if success {
-			g.PassCount = 0
+			// 确保 currentPlayerIndex 在有效范围内
+			if currentPlayerIndex >= 0 && currentPlayerIndex < len(g.ConsecutivePasses) {
+				// 玩家成功出牌，重置跳过状态
+				g.ConsecutivePasses[currentPlayerIndex] = false
+			}
+			g.LastPlayed = int(player.ID) // 记录最后出牌的玩家
 			// 成功出牌后，轮到下一个玩家
 			g.nextTurn()
 			log.Printf("[Battle] Card placed successfully by player %d, next turn: %d", playerID, g.CurrentTurn)
@@ -131,22 +150,62 @@ func (g *WordCardGame) HandleAction(playerID uint64, action *pb.GameAction) pb.E
 		return pb.ErrorCode_INVALID_ORDER
 	case pb.ActionType_SKIP_TURN:
 		log.Printf("[Battle] Handling SKIP_TURN action for player %d", playerID)
-		
+
 		// 检查是否轮到该玩家
 		if currentPlayerIndex != g.CurrentTurn {
-			log.Printf("[Battle] Not player %d's turn for skip (current turn: %d, player index: %d)", 
+			log.Printf("[Battle] Not player %d's turn for skip (current turn: %d, player index: %d)",
 				playerID, g.CurrentTurn, currentPlayerIndex)
 			return pb.ErrorCode_NOT_YOUR_TURN
 		}
-		
-		g.PassCount++
+
+		// 确保 currentPlayerIndex 在有效范围内
+		if currentPlayerIndex < 0 || currentPlayerIndex >= len(g.ConsecutivePasses) {
+			log.Printf("[Battle] Invalid player index %d for ConsecutivePasses array (len=%d)",
+				currentPlayerIndex, len(g.ConsecutivePasses))
+			return pb.ErrorCode_INVALID_USER
+		}
+
+		// 检查桌面是否为空 - 如果为空则不允许跳过（因为任何牌都可以出）
+		if len(g.Table) == 0 {
+			log.Printf("[Battle] Cannot skip when table is empty - any card can be played")
+			return pb.ErrorCode_INVALID_ORDER
+		}
+
+		// 标记当前玩家跳过
+		g.ConsecutivePasses[currentPlayerIndex] = true
+
+		// 双人游戏特殊逻辑：如果桌面有牌且一人跳过，另一人自动得分并重新发牌
+		if len(g.Players) == 2 && len(g.Table) > 0 {
+			log.Printf("[Battle] Two-player game: Player %d skipped, last player who played will score", playerID)
+			g.scoreAndReset()
+			dealCards(g, 8)
+			// 重置跳过状态
+			for i := range g.ConsecutivePasses {
+				g.ConsecutivePasses[i] = false
+			}
+			log.Printf("[Battle] Two-player game: Cards redealt, game continues")
+			return pb.ErrorCode_OK
+		}
+
 		// 跳过回合后，轮到下一个玩家
 		g.nextTurn()
-		
-		if g.PassCount >= len(g.Players) {
-			log.Printf("[Battle] All players passed, scoring and resetting")
+
+		// 检查是否所有玩家都跳过了
+		allPassed := true
+		for _, passed := range g.ConsecutivePasses {
+			if !passed {
+				allPassed = false
+				break
+			}
+		}
+
+		if allPassed {
+			log.Printf("[Battle] All players passed consecutively, scoring and resetting")
 			g.scoreAndReset()
-			g.PassCount = 0
+			// 重置跳过状态
+			for i := range g.ConsecutivePasses {
+				g.ConsecutivePasses[i] = false
+			}
 		}
 		log.Printf("[Battle] Player %d skipped turn, next turn: %d", playerID, g.CurrentTurn)
 		return pb.ErrorCode_OK
@@ -174,6 +233,23 @@ func (g *WordCardGame) HandleAction(playerID uint64, action *pb.GameAction) pb.E
 			g.BroadcastPlayerPositionUpdate(playerID, moveAction)
 		}
 
+		return pb.ErrorCode_OK
+	case pb.ActionType_SURRENDER:
+		log.Printf("[Battle] Handling SURRENDER action for player %d", playerID)
+
+		// 检查是否轮到该玩家
+		if currentPlayerIndex != g.CurrentTurn {
+			log.Printf("[Battle] Not player %d's turn for surrender (current turn: %d, player index: %d)",
+				playerID, g.CurrentTurn, currentPlayerIndex)
+			return pb.ErrorCode_NOT_YOUR_TURN
+		}
+
+		// 处理投降逻辑
+		g.handleSurrender(playerID)
+
+		// 跳过回合后，轮到下一个玩家
+		g.nextTurn()
+		log.Printf("[Battle] Player %d surrendered, next turn: %d", playerID, g.CurrentTurn)
 		return pb.ErrorCode_OK
 	default:
 		log.Printf("[Battle] Unknown action type: %v for player %d", action.ActionType, playerID)
@@ -259,6 +335,125 @@ func (g *WordCardGame) BroadcastPlayerPositionUpdate(playerID uint64, moveAction
 	g.Room.BroadcastPlayerAction(positionUpdate)
 }
 
+// RemovePlayer 从游戏中移除指定玩家
+func (g *WordCardGame) RemovePlayer(playerID uint64) bool {
+	playerIndex := g.getPlayerIndex(playerID)
+	if playerIndex == -1 {
+		return false // 玩家不在游戏中
+	}
+
+	// 从玩家列表中移除
+	g.Players = append(g.Players[:playerIndex], g.Players[playerIndex+1:]...)
+
+	// 同时调整 ConsecutivePasses 数组
+	if playerIndex < len(g.ConsecutivePasses) {
+		g.ConsecutivePasses = append(g.ConsecutivePasses[:playerIndex], g.ConsecutivePasses[playerIndex+1:]...)
+	}
+
+	// 如果移除的是当前回合玩家或之前的玩家，需要调整当前回合索引
+	if playerIndex < g.CurrentTurn {
+		g.CurrentTurn--
+	} else if playerIndex == g.CurrentTurn {
+		// 如果移除的是当前回合玩家，轮到下一个玩家
+		if len(g.Players) > 0 {
+			g.CurrentTurn = g.CurrentTurn % len(g.Players)
+		} else {
+			g.CurrentTurn = 0
+		}
+	}
+
+	// 调整CurrentTurn确保不会超出范围
+	if len(g.Players) > 0 {
+		g.CurrentTurn = g.CurrentTurn % len(g.Players)
+	} else {
+		g.CurrentTurn = 0
+	}
+
+	log.Printf("[Battle] Player %d removed from game, players left: %d, current turn: %d",
+		playerID, len(g.Players), g.CurrentTurn)
+
+	return true
+}
+
+// CheckTurnTimeout 检查并处理回合超时
+func (g *WordCardGame) CheckTurnTimeout() bool {
+	// 检查是否超时（15秒）
+	if time.Since(g.TurnStartTime) > g.TurnTimeout {
+		log.Printf("[Battle] Player turn timeout, skipping turn for player index: %d", g.CurrentTurn)
+
+		// 获取当前玩家
+		if len(g.Players) > 0 {
+			currentPlayer := g.Players[g.CurrentTurn]
+
+			// 标记当前玩家跳过
+			if g.CurrentTurn < len(g.ConsecutivePasses) {
+				g.ConsecutivePasses[g.CurrentTurn] = true
+			}
+
+			// 跳过回合后，轮到下一个玩家
+			g.nextTurn()
+
+			// 检查是否所有玩家都跳过了
+			allPassed := true
+			for _, passed := range g.ConsecutivePasses {
+				if !passed {
+					allPassed = false
+					break
+				}
+			}
+
+			if allPassed {
+				log.Printf("[Battle] All players passed consecutively, scoring and resetting")
+				g.scoreAndReset()
+				// 重置跳过状态
+				for i := range g.ConsecutivePasses {
+					g.ConsecutivePasses[i] = false
+				}
+			}
+
+			// 广播跳过消息
+			if g.Room != nil {
+				skipAction := &pb.GameAction{
+					PlayerId:   currentPlayer.ID,
+					ActionType: pb.ActionType_SKIP_TURN,
+					Timestamp:  time.Now().UnixMilli(),
+				}
+
+				g.Room.BroadcastPlayerAction(skipAction)
+			}
+
+			// 广播新的游戏状态
+			if g.Room != nil {
+				g.Room.BroadcastGameState()
+			}
+
+			return true // 发生了超时处理
+		}
+	}
+	return false // 没有超时
+}
+
+// Update 游戏更新方法，处理游戏逻辑更新
+func (g *WordCardGame) Update() bool {
+	// 检查是否有玩家分数超过30分
+	for _, p := range g.Players {
+		if p.Score >= 30 {
+			log.Printf("[Battle] Player %d has reached 30 points, game over", p.ID)
+			return false // 游戏结束
+		}
+	}
+
+	// 检查游戏是否结束（手牌为空）
+	if g.IsGameOver() {
+		return false // 游戏结束
+	}
+
+	// 检查回合是否超时
+	g.CheckTurnTimeout()
+
+	return true // 正常运行
+}
+
 // 内部辅助方法
 func (g *WordCardGame) findPlayerByID(playerID uint64) *Player {
 	for _, p := range g.Players {
@@ -292,7 +487,7 @@ func (g *WordCardGame) playCard(player *Player, card GameCard, position int) boo
 		g.Table = append(g.Table[:position], append([]GameCard{card}, g.Table[position:]...)...)
 		g.POSSeq = append(g.POSSeq[:position], append([]string{card.POS}, g.POSSeq[position:]...)...)
 	}
-	
+
 	g.LastPlayed = int(player.ID)
 	return true
 }
@@ -302,10 +497,21 @@ func (g *WordCardGame) scoreAndReset() {
 	for _, p := range g.Players {
 		if uint64(p.ID) == uint64(g.LastPlayed) {
 			p.Score += score
+			log.Printf("[Battle] Player %d scored %d points, total score: %d", p.ID, score, p.Score)
 		}
 	}
 	g.Table = []GameCard{}
 	g.POSSeq = []string{}
+
+	// 随机选择下一个起始玩家
+	if len(g.Players) > 0 {
+		g.CurrentTurn = rand.Intn(len(g.Players))
+		g.TurnStartTime = time.Now() // 重置回合开始时间
+	}
+
+	dealCards(g, 8)
+
+	log.Printf("[Battle] Game reset, new starting player: %d", g.CurrentTurn)
 }
 
 // 游戏通用函数
@@ -329,6 +535,10 @@ func loadDeck(filename string, copies int) []GameCard {
 }
 
 func dealCards(g *WordCardGame, handSize int) {
+	// 清空所有玩家手牌，重新发牌
+	for _, player := range g.Players {
+		player.Hand = []GameCard{} // 清空手牌
+	}
 	for i := 0; i < handSize; i++ {
 		for _, p := range g.Players {
 			if len(g.Deck) > 0 {
@@ -404,5 +614,30 @@ func (g *WordCardGame) getPlayerIndex(playerID uint64) int {
 
 // nextTurn 切换到下一个玩家的回合
 func (g *WordCardGame) nextTurn() {
-	g.CurrentTurn = (g.CurrentTurn + 1) % len(g.Players)
+	if len(g.Players) > 0 {
+		g.CurrentTurn = (g.CurrentTurn + 1) % len(g.Players)
+		// 更新回合开始时间
+		g.TurnStartTime = time.Now()
+	} else {
+		g.CurrentTurn = 0
+	}
+}
+
+// handleSurrender 处理玩家投降逻辑
+func (g *WordCardGame) handleSurrender(playerID uint64) {
+	log.Printf("[Battle] Player %d surrendered", playerID)
+
+	// 广播玩家投降的消息给所有玩家
+	if g.Room != nil {
+		surrenderAction := &pb.GameAction{
+			PlayerId:   playerID,
+			ActionType: pb.ActionType_SURRENDER,
+			Timestamp:  time.Now().UnixMilli(),
+		}
+
+		g.Room.BroadcastPlayerAction(surrenderAction)
+	}
+
+	// 标记该玩家已投降，将其从游戏中移除
+	g.RemovePlayer(playerID)
 }

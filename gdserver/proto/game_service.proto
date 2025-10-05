@@ -19,9 +19,16 @@ message GameStartNotify {
   game.GameStartNotification game_start = 2;
 }
 
+// 游戏结束通知
+message GameEndNotify {
+  uint64  be_notified_uid = 1; // 被通知的用户ID
+  battle.GameEndNotification game_end = 2;
+}
+
 service GameRpcService {
   rpc RoomStatusNotifyRpc(RoomDetailNotify) returns (battle.NotifyResponse);
   rpc GameStateNotifyRpc(battle.GameStateNotify) returns (battle.NotifyResponse);
   rpc PlayerActionNotifyRpc(battle.PlayerActionNotify) returns (battle.NotifyResponse);
   rpc GameStartNotifyRpc(GameStartNotify) returns (battle.NotifyResponse);
+  rpc GameEndNotifyRpc(GameEndNotify) returns (battle.NotifyResponse);
 }

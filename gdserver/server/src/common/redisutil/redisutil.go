@@ -363,22 +363,16 @@ func (rp *RedisPool) GenerateBattleID() (string, error) {
 	conn := rp.pool.Get()
 	defer conn.Close()
 
-	// 使用日期前缀 + 序列号
-	today := time.Now().Format("20060102")
-	key := "global:battle_id:" + today
+	// 使用全局序列号生成纯数字ID
+	key := "global:battle_id_counter"
 
-	// 初始化或递增序列号
-	_, err := conn.Do("SETNX", key, 0)
-	if err != nil {
-		return "", fmt.Errorf("SETNX failed: %w", err)
-	}
-
+	// 递增序列号
 	id, err := redis.Int64(conn.Do("INCR", key))
 	if err != nil {
 		return "", fmt.Errorf("INCR failed: %w", err)
 	}
 
-	return fmt.Sprintf("%s-%d", today, id), nil
+	return fmt.Sprintf("%d", id), nil
 }
 
 // ====================== 新增方法 ====================== //

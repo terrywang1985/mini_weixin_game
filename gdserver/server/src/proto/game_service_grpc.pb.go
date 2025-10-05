@@ -23,6 +23,7 @@ const (
 	GameRpcService_GameStateNotifyRpc_FullMethodName    = "/game_service.GameRpcService/GameStateNotifyRpc"
 	GameRpcService_PlayerActionNotifyRpc_FullMethodName = "/game_service.GameRpcService/PlayerActionNotifyRpc"
 	GameRpcService_GameStartNotifyRpc_FullMethodName    = "/game_service.GameRpcService/GameStartNotifyRpc"
+	GameRpcService_GameEndNotifyRpc_FullMethodName      = "/game_service.GameRpcService/GameEndNotifyRpc"
 )
 
 // GameRpcServiceClient is the client API for GameRpcService service.
@@ -33,6 +34,7 @@ type GameRpcServiceClient interface {
 	GameStateNotifyRpc(ctx context.Context, in *GameStateNotify, opts ...grpc.CallOption) (*NotifyResponse, error)
 	PlayerActionNotifyRpc(ctx context.Context, in *PlayerActionNotify, opts ...grpc.CallOption) (*NotifyResponse, error)
 	GameStartNotifyRpc(ctx context.Context, in *GameStartNotify, opts ...grpc.CallOption) (*NotifyResponse, error)
+	GameEndNotifyRpc(ctx context.Context, in *GameEndNotify, opts ...grpc.CallOption) (*NotifyResponse, error)
 }
 
 type gameRpcServiceClient struct {
@@ -83,6 +85,16 @@ func (c *gameRpcServiceClient) GameStartNotifyRpc(ctx context.Context, in *GameS
 	return out, nil
 }
 
+func (c *gameRpcServiceClient) GameEndNotifyRpc(ctx context.Context, in *GameEndNotify, opts ...grpc.CallOption) (*NotifyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(NotifyResponse)
+	err := c.cc.Invoke(ctx, GameRpcService_GameEndNotifyRpc_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // GameRpcServiceServer is the server API for GameRpcService service.
 // All implementations must embed UnimplementedGameRpcServiceServer
 // for forward compatibility.
@@ -91,6 +103,7 @@ type GameRpcServiceServer interface {
 	GameStateNotifyRpc(context.Context, *GameStateNotify) (*NotifyResponse, error)
 	PlayerActionNotifyRpc(context.Context, *PlayerActionNotify) (*NotifyResponse, error)
 	GameStartNotifyRpc(context.Context, *GameStartNotify) (*NotifyResponse, error)
+	GameEndNotifyRpc(context.Context, *GameEndNotify) (*NotifyResponse, error)
 	mustEmbedUnimplementedGameRpcServiceServer()
 }
 
@@ -112,6 +125,9 @@ func (UnimplementedGameRpcServiceServer) PlayerActionNotifyRpc(context.Context, 
 }
 func (UnimplementedGameRpcServiceServer) GameStartNotifyRpc(context.Context, *GameStartNotify) (*NotifyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GameStartNotifyRpc not implemented")
+}
+func (UnimplementedGameRpcServiceServer) GameEndNotifyRpc(context.Context, *GameEndNotify) (*NotifyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GameEndNotifyRpc not implemented")
 }
 func (UnimplementedGameRpcServiceServer) mustEmbedUnimplementedGameRpcServiceServer() {}
 func (UnimplementedGameRpcServiceServer) testEmbeddedByValue()                        {}
@@ -206,6 +222,24 @@ func _GameRpcService_GameStartNotifyRpc_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _GameRpcService_GameEndNotifyRpc_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GameEndNotify)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GameRpcServiceServer).GameEndNotifyRpc(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GameRpcService_GameEndNotifyRpc_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GameRpcServiceServer).GameEndNotifyRpc(ctx, req.(*GameEndNotify))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // GameRpcService_ServiceDesc is the grpc.ServiceDesc for GameRpcService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -228,6 +262,10 @@ var GameRpcService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GameStartNotifyRpc",
 			Handler:    _GameRpcService_GameStartNotifyRpc_Handler,
+		},
+		{
+			MethodName: "GameEndNotifyRpc",
+			Handler:    _GameRpcService_GameEndNotifyRpc_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
