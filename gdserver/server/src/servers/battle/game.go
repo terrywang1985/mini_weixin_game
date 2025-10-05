@@ -13,6 +13,7 @@ import (
 type RoomInterface interface {
 	BroadcastGameState()
 	BroadcastPlayerAction(action *pb.GameAction) // 通用的玩家动作广播
+	IsGameStarted() bool                         // 获取游戏是否已开始状态
 }
 
 // GameType 游戏类型枚举
@@ -61,15 +62,13 @@ type WordCardGame struct {
 	Table       []GameCard
 	POSSeq      []string
 	CurrentTurn int
-	LastPlayed  int
-	PassCount   int
+	LastPlayed  uint64
+	SkipCount   int // 当前轮次跳过的人数
 	// 添加房间引用用于广播
 	Room RoomInterface
 	// 添加倒计时相关字段
 	// TurnStartTime time.Time     // 当前回合开始时间
 	// TurnTimeout   time.Duration // 回合超时时间（15秒）
-	// 添加每个玩家的跳过状态跟踪
-	ConsecutivePasses []bool // 记录每个玩家是否在当前轮次中跳过
 }
 
 func (g *WordCardGame) Init(players []*Player) {
@@ -79,14 +78,14 @@ func (g *WordCardGame) Init(players []*Player) {
 	// g.TurnStartTime = time.Now()
 	// g.TurnTimeout = 15 * time.Second
 
-	// 初始化每个玩家的跳过状态
-	g.ConsecutivePasses = make([]bool, len(players))
+	// 初始化跳过计数
+	g.SkipCount = 0
 }
 
 func (g *WordCardGame) Start() {
 	dealCards(g, 8)
 	g.CurrentTurn = rand.Intn(len(g.Players))
-	g.PassCount = 0
+	g.SkipCount = 0
 
 	// 发牌完成后，广播初始游戏状态
 	if g.Room != nil {
@@ -135,12 +134,11 @@ func (g *WordCardGame) HandleAction(playerID uint64, action *pb.GameAction) pb.E
 		card := player.Hand[cardIdx]
 		success := g.playCard(player, card, targetIndex)
 		if success {
-			// 确保 currentPlayerIndex 在有效范围内
-			if currentPlayerIndex >= 0 && currentPlayerIndex < len(g.ConsecutivePasses) {
-				// 玩家成功出牌，重置跳过状态
-				g.ConsecutivePasses[currentPlayerIndex] = false
-			}
-			g.LastPlayed = int(player.ID) // 记录最后出牌的玩家
+			// 玩家成功出牌，重置跳过计数
+			log.Printf("[Battle] 玩家 %d 出牌成功，重置跳过计数，之前跳过人数: %d", playerID, g.SkipCount)
+			g.SkipCount = 0
+			g.LastPlayed = player.ID // 记录最后出牌的玩家
+			log.Printf("[Battle] 重置后跳过计数: %d，最后出牌玩家: %d", g.SkipCount, g.LastPlayed)
 			// 成功出牌后，轮到下一个玩家
 			g.nextTurn()
 			log.Printf("[Battle] Card placed successfully by player %d, next turn: %d", playerID, g.CurrentTurn)
@@ -158,54 +156,31 @@ func (g *WordCardGame) HandleAction(playerID uint64, action *pb.GameAction) pb.E
 			return pb.ErrorCode_NOT_YOUR_TURN
 		}
 
-		// 确保 currentPlayerIndex 在有效范围内
-		if currentPlayerIndex < 0 || currentPlayerIndex >= len(g.ConsecutivePasses) {
-			log.Printf("[Battle] Invalid player index %d for ConsecutivePasses array (len=%d)",
-				currentPlayerIndex, len(g.ConsecutivePasses))
-			return pb.ErrorCode_INVALID_USER
-		}
-
 		// 检查桌面是否为空 - 如果为空则不允许跳过（因为任何牌都可以出）
 		if len(g.Table) == 0 {
 			log.Printf("[Battle] Cannot skip when table is empty - any card can be played")
 			return pb.ErrorCode_INVALID_ORDER
 		}
 
-		// 标记当前玩家跳过
-		g.ConsecutivePasses[currentPlayerIndex] = true
-
-		// 双人游戏特殊逻辑：如果桌面有牌且一人跳过，另一人自动得分并重新发牌
-		if len(g.Players) == 2 && len(g.Table) > 0 {
-			log.Printf("[Battle] Two-player game: Player %d skipped, last player who played will score", playerID)
-			g.scoreAndReset()
-			dealCards(g, 8)
-			// 重置跳过状态
-			for i := range g.ConsecutivePasses {
-				g.ConsecutivePasses[i] = false
-			}
-			log.Printf("[Battle] Two-player game: Cards redealt, game continues")
-			return pb.ErrorCode_OK
-		}
+		// 跳过人数增加
+		g.SkipCount++
+		log.Printf("[Battle] 玩家 %d 跳过，当前跳过人数: %d，总玩家数: %d", playerID, g.SkipCount, len(g.Players))
 
 		// 跳过回合后，轮到下一个玩家
 		g.nextTurn()
 
-		// 检查是否所有玩家都跳过了
-		allPassed := true
-		for _, passed := range g.ConsecutivePasses {
-			if !passed {
-				allPassed = false
-				break
-			}
-		}
-
-		if allPassed {
-			log.Printf("[Battle] All players passed consecutively, scoring and resetting")
+		// 检查是否除了最后出牌玩家外所有人都跳过了
+		if g.SkipCount >= len(g.Players)-1 {
+			log.Printf("[Battle] 跳过人数达到 %d，最后出牌玩家 %d 得分", g.SkipCount, g.LastPlayed)
 			g.scoreAndReset()
-			// 重置跳过状态
-			for i := range g.ConsecutivePasses {
-				g.ConsecutivePasses[i] = false
+
+			// 检查游戏是否因胜利条件而结束
+			if g.IsGameOver() {
+				log.Printf("[Battle] Game ended after scoring")
+				return pb.ErrorCode_OK
 			}
+
+			log.Printf("[Battle] Cards redealt, game continues")
 		}
 
 		log.Printf("[Battle] Player %d skipped turn, next turn: %d", playerID, g.CurrentTurn)
@@ -295,11 +270,29 @@ func (g *WordCardGame) GetState() *pb.GameState {
 }
 
 func (g *WordCardGame) IsGameOver() bool {
+	// 检查是否有玩家达到胜利分数（20分）
+	for _, p := range g.Players {
+		if p.Score >= 20 {
+			return true
+		}
+	}
+
+	// 检查是否有玩家手牌为空
 	for _, p := range g.Players {
 		if len(p.Hand) == 0 {
 			return true
 		}
 	}
+
+	// 只有在游戏已经开始的情况下，才检查人数是否不足
+	// 等待房间状态下人数少不应该结束游戏
+	if g.Room != nil && g.Room.IsGameStarted() {
+		// 游戏进行中，如果人数≤1则结束游戏
+		if len(g.Players) <= 1 {
+			return true
+		}
+	}
+
 	return false
 }
 
@@ -345,11 +338,6 @@ func (g *WordCardGame) RemovePlayer(playerID uint64) bool {
 
 	// 从玩家列表中移除
 	g.Players = append(g.Players[:playerIndex], g.Players[playerIndex+1:]...)
-
-	// 同时调整 ConsecutivePasses 数组
-	if playerIndex < len(g.ConsecutivePasses) {
-		g.ConsecutivePasses = append(g.ConsecutivePasses[:playerIndex], g.ConsecutivePasses[playerIndex+1:]...)
-	}
 
 	// 如果移除的是当前回合玩家或之前的玩家，需要调整当前回合索引
 	if playerIndex < g.CurrentTurn {
@@ -489,20 +477,36 @@ func (g *WordCardGame) playCard(player *Player, card GameCard, position int) boo
 		g.POSSeq = append(g.POSSeq[:position], append([]string{card.POS}, g.POSSeq[position:]...)...)
 	}
 
-	g.LastPlayed = int(player.ID)
+	g.LastPlayed = player.ID
 	return true
 }
 
 func (g *WordCardGame) scoreAndReset() {
 	score := len(g.Table)
+	gameEnded := false
+
 	for _, p := range g.Players {
-		if uint64(p.ID) == uint64(g.LastPlayed) {
+		if p.ID == g.LastPlayed {
 			p.Score += score
 			log.Printf("[Battle] Player %d scored %d points, total score: %d", p.ID, score, p.Score)
+
+			// 检查是否达到胜利条件（20分）
+			if p.Score >= 20 {
+				log.Printf("[Battle] Player %d has reached 20 points, game over", p.ID)
+				gameEnded = true
+			}
 		}
 	}
+
+	// 如果游戏结束，不重新发牌
+	if gameEnded {
+		log.Printf("[Battle] Game ended due to victory condition")
+		return
+	}
+
 	g.Table = []GameCard{}
 	g.POSSeq = []string{}
+	g.SkipCount = 0 // 重置跳过计数
 
 	// 随机选择下一个起始玩家
 	if len(g.Players) > 0 {

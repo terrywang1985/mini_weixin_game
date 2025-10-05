@@ -14,6 +14,7 @@ type BattleRoom struct {
 	Server            *BattleServer
 	Game              Game
 	GameType          GameType
+	GameStarted       bool              // 游戏是否已经开始（区分等待状态和游戏进行状态）
 	ReadyPlayers      map[uint64]bool
 	CmdChan           chan Command
 	CmdChanWithResult chan CommandWithResult
@@ -154,6 +155,7 @@ func (room *BattleRoom) StartGame() {
 	// 初始化并开始游戏
 	room.Game.Init(players)
 	room.Game.Start()
+	room.GameStarted = true // 标记游戏已开始
 
 	// 清空准备状态，避免下局继承（若房间复用）
 	room.ReadyPlayers = make(map[uint64]bool)
@@ -370,6 +372,8 @@ func (room *BattleRoom) handleCharMoveInRoom(cmd Command) {
 
 func (room *BattleRoom) EndGame() {
 	slog.Info("Game ended", "room", room.BattleID)
+	
+	room.GameStarted = false // 标记游戏已结束
 
 	// 清理房间
 	room.Server.RoomsMutex.Lock()
@@ -605,4 +609,9 @@ func (room *BattleRoom) BroadcastInitialPositions(newPlayerID uint64) {
 
 	slog.Info("Initial positions sent to new player", "new_player_id", newPlayerID,
 		"existing_players_count", len(room.Players)-1)
+}
+
+// IsGameStarted 实现 RoomInterface 接口，返回游戏是否已开始
+func (room *BattleRoom) IsGameStarted() bool {
+	return room.GameStarted
 }
