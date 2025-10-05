@@ -66,8 +66,8 @@ type WordCardGame struct {
 	// 添加房间引用用于广播
 	Room RoomInterface
 	// 添加倒计时相关字段
-	TurnStartTime time.Time     // 当前回合开始时间
-	TurnTimeout   time.Duration // 回合超时时间（15秒）
+	// TurnStartTime time.Time     // 当前回合开始时间
+	// TurnTimeout   time.Duration // 回合超时时间（15秒）
 	// 添加每个玩家的跳过状态跟踪
 	ConsecutivePasses []bool // 记录每个玩家是否在当前轮次中跳过
 }
@@ -76,8 +76,8 @@ func (g *WordCardGame) Init(players []*Player) {
 	g.Players = players
 	g.Deck = loadDeck("../cfg/word_cards.json", 4)
 
-	g.TurnStartTime = time.Now()
-	g.TurnTimeout = 15 * time.Second
+	// g.TurnStartTime = time.Now()
+	// g.TurnTimeout = 15 * time.Second
 
 	// 初始化每个玩家的跳过状态
 	g.ConsecutivePasses = make([]bool, len(players))
@@ -207,6 +207,7 @@ func (g *WordCardGame) HandleAction(playerID uint64, action *pb.GameAction) pb.E
 				g.ConsecutivePasses[i] = false
 			}
 		}
+
 		log.Printf("[Battle] Player %d skipped turn, next turn: %d", playerID, g.CurrentTurn)
 		return pb.ErrorCode_OK
 	case pb.ActionType_CHAR_MOVE:
@@ -378,58 +379,58 @@ func (g *WordCardGame) RemovePlayer(playerID uint64) bool {
 // CheckTurnTimeout 检查并处理回合超时
 func (g *WordCardGame) CheckTurnTimeout() bool {
 	// 检查是否超时（15秒）
-	if time.Since(g.TurnStartTime) > g.TurnTimeout {
-		log.Printf("[Battle] Player turn timeout, skipping turn for player index: %d", g.CurrentTurn)
+	// if time.Since(g.TurnStartTime) > g.TurnTimeout {
+	// 	log.Printf("[Battle] Player turn timeout, skipping turn for player index: %d", g.CurrentTurn)
 
-		// 获取当前玩家
-		if len(g.Players) > 0 {
-			currentPlayer := g.Players[g.CurrentTurn]
+	// 	// 获取当前玩家
+	// 	if len(g.Players) > 0 {
+	// 		currentPlayer := g.Players[g.CurrentTurn]
 
-			// 标记当前玩家跳过
-			if g.CurrentTurn < len(g.ConsecutivePasses) {
-				g.ConsecutivePasses[g.CurrentTurn] = true
-			}
+	// 		// 标记当前玩家跳过
+	// 		if g.CurrentTurn < len(g.ConsecutivePasses) {
+	// 			g.ConsecutivePasses[g.CurrentTurn] = true
+	// 		}
 
-			// 跳过回合后，轮到下一个玩家
-			g.nextTurn()
+	// 		// 跳过回合后，轮到下一个玩家
+	// 		g.nextTurn()
 
-			// 检查是否所有玩家都跳过了
-			allPassed := true
-			for _, passed := range g.ConsecutivePasses {
-				if !passed {
-					allPassed = false
-					break
-				}
-			}
+	// 		// 检查是否所有玩家都跳过了
+	// 		allPassed := true
+	// 		for _, passed := range g.ConsecutivePasses {
+	// 			if !passed {
+	// 				allPassed = false
+	// 				break
+	// 			}
+	// 		}
 
-			if allPassed {
-				log.Printf("[Battle] All players passed consecutively, scoring and resetting")
-				g.scoreAndReset()
-				// 重置跳过状态
-				for i := range g.ConsecutivePasses {
-					g.ConsecutivePasses[i] = false
-				}
-			}
+	// 		if allPassed {
+	// 			log.Printf("[Battle] All players passed consecutively, scoring and resetting")
+	// 			g.scoreAndReset()
+	// 			// 重置跳过状态
+	// 			// for i := range g.ConsecutivePasses {
+	// 			// 	g.ConsecutivePasses[i] = false
+	// 			// }
+	// 		}
 
-			// 广播跳过消息
-			if g.Room != nil {
-				skipAction := &pb.GameAction{
-					PlayerId:   currentPlayer.ID,
-					ActionType: pb.ActionType_SKIP_TURN,
-					Timestamp:  time.Now().UnixMilli(),
-				}
+	// 		// 广播跳过消息
+	// 		if g.Room != nil {
+	// 			skipAction := &pb.GameAction{
+	// 				PlayerId:   currentPlayer.ID,
+	// 				ActionType: pb.ActionType_SKIP_TURN,
+	// 				Timestamp:  time.Now().UnixMilli(),
+	// 			}
 
-				g.Room.BroadcastPlayerAction(skipAction)
-			}
+	// 			g.Room.BroadcastPlayerAction(skipAction)
+	// 		}
 
-			// 广播新的游戏状态
-			if g.Room != nil {
-				g.Room.BroadcastGameState()
-			}
+	// 		// 广播新的游戏状态
+	// 		if g.Room != nil {
+	// 			g.Room.BroadcastGameState()
+	// 		}
 
-			return true // 发生了超时处理
-		}
-	}
+	// 		return true // 发生了超时处理
+	// 	}
+	// }
 	return false // 没有超时
 }
 
@@ -506,7 +507,8 @@ func (g *WordCardGame) scoreAndReset() {
 	// 随机选择下一个起始玩家
 	if len(g.Players) > 0 {
 		g.CurrentTurn = rand.Intn(len(g.Players))
-		g.TurnStartTime = time.Now() // 重置回合开始时间
+		// 更新回合开始时间
+		// g.TurnStartTime = time.Now() // 重置回合开始时间
 	}
 
 	dealCards(g, 8)
@@ -617,7 +619,7 @@ func (g *WordCardGame) nextTurn() {
 	if len(g.Players) > 0 {
 		g.CurrentTurn = (g.CurrentTurn + 1) % len(g.Players)
 		// 更新回合开始时间
-		g.TurnStartTime = time.Now()
+		// g.TurnStartTime = time.Now()
 	} else {
 		g.CurrentTurn = 0
 	}

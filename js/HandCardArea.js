@@ -48,7 +48,9 @@ class HandCardArea {
             startScrollOffset: 0,
             lastX: 0,
             dragThreshold: 5, // 开始拖拽的最小距离
-            sensitivity: 0.8 // 滑动敏感度
+            sensitivity: 1.2, // 提高敏感度，减少更新频率
+            lastUpdateTime: 0, // 上次更新时间
+            updateThrottle: 16 // 更新节流，60FPS
         };
         
         // 可见性状态
@@ -129,7 +131,7 @@ class HandCardArea {
             this.maxScrollOffset = 0;
         }
         
-        // 计算每张卡牌的位置（考虑滚动偏移）
+        // 重新计算每张卡牌的位置（考虑滚动偏移）
         this.cardRects = [];
         const startX = this.areaRect.x;
         const cardY = this.areaRect.y;
@@ -156,8 +158,6 @@ class HandCardArea {
     // 渲染手牌区域
     render() {
         if (this.handCards.length === 0) return;
-        
-        // 不再绘制滚动按钮
         
         // 绘制可见的卡牌
         this.cardRects.forEach((cardRect) => {
@@ -190,9 +190,12 @@ class HandCardArea {
         
         // 确定卡牌颜色
         let cardColor = '#2196F3'; // 默认蓝色
-        if (index === this.selectedCardIndex) {
+        const isSelected = index === this.selectedCardIndex;
+        const isHovered = index === this.hoveredCardIndex;
+        
+        if (isSelected) {
             cardColor = this.config.selectedColor;
-        } else if (index === this.hoveredCardIndex) {
+        } else if (isHovered) {
             cardColor = this.config.hoverColor;
         }
         
@@ -287,6 +290,10 @@ class HandCardArea {
         this.selectedCardIndex = index;
         
         console.log(`[HandCardArea] 选择卡牌: ${index} - ${this.handCards[index].word}`);
+        console.log(`[HandCardArea] 当前选中索引: ${this.selectedCardIndex}`);
+        
+        // 立即重新渲染以显示选中效果
+        this.render();
         
         // 触发卡牌选择事件
         this.onCardSelected && this.onCardSelected(index, this.handCards[index], previousSelected);
@@ -481,12 +488,21 @@ class HandCardArea {
         this.dragState.startX = x;
         this.dragState.lastX = x;
         this.dragState.startScrollOffset = this.scrollOffset;
+        this.dragState.lastUpdateTime = 0; // 重置节流时间
         this.canvas.style.cursor = 'grabbing';
     }
     
     // 更新拖拽状态
     updateDrag(x) {
         if (!this.dragState.isDragging) return;
+        
+        // 节流更新，减少频繁计算
+        const now = Date.now();
+        if (now - this.dragState.lastUpdateTime < this.dragState.updateThrottle) {
+            this.dragState.lastX = x;
+            return;
+        }
+        this.dragState.lastUpdateTime = now;
         
         const deltaX = x - this.dragState.startX;
         const cardWidth = this.config.cardWidth + this.config.cardSpacing;
@@ -500,6 +516,8 @@ class HandCardArea {
         if (newScrollOffset !== this.scrollOffset) {
             this.scrollOffset = newScrollOffset;
             this.calculateLayout();
+            // 立即重新渲染以提供流畅的拖拽体验
+            this.render();
         }
         
         this.dragState.lastX = x;
@@ -558,6 +576,13 @@ class HandCardArea {
         const x = event.clientX - rect.left;
         const y = event.clientY - rect.top;
         
+        // 检查是否在手牌区域内
+        if (!this.isInHandCardArea(x, y)) {
+            return;
+        }
+        
+        console.log(`[HandCardArea] 点击坐标: (${x}, ${y})`);
+        
         // 检查是否点击了某张卡牌
         for (let i = 0; i < this.cardRects.length; i++) {
             const cardRect = this.cardRects[i];
@@ -565,6 +590,7 @@ class HandCardArea {
                 x >= cardRect.x && x <= cardRect.x + cardRect.width &&
                 y >= cardRect.y && y <= cardRect.y + cardRect.height) {
                 
+                console.log(`[HandCardArea] 点击了卡牌 ${cardRect.index}`);
                 this.selectCard(cardRect.index);
                 break;
             }

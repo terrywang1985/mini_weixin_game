@@ -2,7 +2,7 @@ import NetworkManager from './NetworkManager.js';
 import GameStateManager from './GameStateManager.js';
 import MainMenu from './MainMenu.js';
 import RoomList from './RoomList.js';
-import GameRoom from './GameRoom.js';
+import RoomManager from './RoomManager.js';
 
 /**
  * 微信小游戏主函数 - 重构版本
@@ -25,7 +25,7 @@ export default class Main {
     // 初始化UI页面
     this.mainMenu = new MainMenu(this.canvas, this.networkManager);
     this.roomList = new RoomList(this.canvas, this.networkManager);
-    this.gameRoom = new GameRoom(this.canvas, this.networkManager);
+    this.roomManager = new RoomManager(this.canvas, this.networkManager);
     
     // 当前活动页面
     this.currentPage = null;
@@ -247,7 +247,7 @@ export default class Main {
     // 隐藏所有页面
     this.mainMenu.hide();
     this.roomList.hide();
-    this.gameRoom.hide();
+    // RoomManager会根据状态自动管理显示/隐藏
     
     // 显示对应的页面
     switch (newState) {
@@ -269,14 +269,12 @@ export default class Main {
         break;
       case GameStateManager.GAME_STATES.IN_ROOM:
         this.isLoading = false;
-        this.currentPage = this.gameRoom;
-        this.gameRoom.show();
+        // RoomManager 会自动显示 WaitingRoom
         break;
       case GameStateManager.GAME_STATES.IN_GAME:
         // 游戏开始后继续显示游戏房间页面（显示游戏界面）
         this.isLoading = false;
-        this.currentPage = this.gameRoom;
-        this.gameRoom.show();
+        // RoomManager 会自动显示 GameRoom
         break;
       case GameStateManager.GAME_STATES.LOADING:
         this.currentPage = null;
@@ -343,7 +341,7 @@ export default class Main {
     // 更新所有页面的画布尺寸
     if (this.mainMenu) this.mainMenu.updateCanvasSize();
     if (this.roomList) this.roomList.updateCanvasSize();
-    if (this.gameRoom) this.gameRoom.updateCanvasSize();
+    if (this.roomManager) this.roomManager.updateCanvasSize();
   }
   
   startGameLoop() {
@@ -371,13 +369,9 @@ export default class Main {
     if (!this.currentPage) {
       // 容错：如果已经在某个状态，却没有设置 currentPage，尝试恢复
       if (GameStateManager.currentState === GameStateManager.GAME_STATES.IN_GAME) {
-        console.warn('[Recover] IN_GAME 状态下 currentPage 丢失，尝试自动恢复 gameRoom');
-        this.currentPage = this.gameRoom;
-        this.gameRoom.show();
+        console.warn('[Recover] IN_GAME 状态下 currentPage 丢失，RoomManager 会自动处理');
       } else if (GameStateManager.currentState === GameStateManager.GAME_STATES.IN_ROOM) {
-        console.warn('[Recover] IN_ROOM 状态下 currentPage 丢失，尝试自动恢复 gameRoom');
-        this.currentPage = this.gameRoom;
-        this.gameRoom.show();
+        console.warn('[Recover] IN_ROOM 状态下 currentPage 丢失，RoomManager 会自动处理');
       } else if (GameStateManager.currentState === GameStateManager.GAME_STATES.MAIN_MENU) {
         console.warn('[Recover] MAIN_MENU 状态下 currentPage 丢失，尝试自动恢复 mainMenu');
         this.currentPage = this.mainMenu;

@@ -222,6 +222,16 @@ class GameStateManager {
         this.notifyGameStateUpdate();
     }
 
+    // 获取当前游戏状态
+    get gameState() {
+        return this.gameData.gameState;
+    }
+
+    // 获取我的玩家ID
+    get myPlayerId() {
+        return this.userInfo.uid;
+    }
+
     // 获取当前玩家手牌
     getMyHandCards() {
         return [...this.gameData.myHandCards];
