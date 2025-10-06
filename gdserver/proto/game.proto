@@ -253,8 +253,7 @@ enum MessageId {
 
   GAME_ACTION_NOTIFICATION = 22; //游戏动作通知
   GAME_START_NOTIFICATION = 23; //游戏开始通知
-
-
+  GAME_END_NOTIFICATION = 24; //游戏结束通知
 
 
 }

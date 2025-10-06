@@ -615,3 +615,41 @@ func (room *BattleRoom) BroadcastInitialPositions(newPlayerID uint64) {
 func (room *BattleRoom) IsGameStarted() bool {
 	return room.GameStarted
 }
+
+// BroadcastGameEnd 广播游戏结束通知给所有玩家
+func (room *BattleRoom) BroadcastGameEnd(gameEndNotification *pb.GameEndNotification) {
+	slog.Info("Broadcasting game end notification to all players", "room_id", room.BattleID)
+
+	// 设置房间ID
+	gameEndNotification.RoomId = room.BattleID
+
+	// 通知房间内所有玩家
+	for playerID := range room.Players {
+		room.NotifyGameEndToPlayer(playerID, gameEndNotification)
+	}
+}
+
+// NotifyGameEndToPlayer 通知单个玩家游戏结束
+func (room *BattleRoom) NotifyGameEndToPlayer(playerID uint64, gameEndNotification *pb.GameEndNotification) {
+	client, err := room.Server.getGameClient()
+	if err != nil {
+		slog.Error("Failed to get game client for game end notification", "error", err)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	// 使用 GameEndNotify 消息格式发送游戏结束通知
+	notify := &pb.GameEndNotify{
+		BeNotifiedUid: playerID,
+		GameEnd:       gameEndNotification,
+	}
+
+	_, err = client.GameEndNotifyRpc(ctx, notify)
+	if err != nil {
+		slog.Error("Failed to send game end notification", "player_id", playerID, "error", err)
+	} else {
+		slog.Info("Game end notification sent successfully", "player_id", playerID)
+	}
+}

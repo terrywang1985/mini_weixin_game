@@ -97,6 +97,11 @@ class GameRoom {
             this.onGameStart(data);
         });
         
+        // 监听游戏结束通知
+        this.networkManager.on('game_end_notification', (data) => {
+            this.onGameEnd(data);
+        });
+        
         // 监听游戏动作响应
         this.networkManager.on('game_action_failed', (data) => {
             this.onGameActionFailed(data);
@@ -337,6 +342,87 @@ class GameRoom {
         }
     }
     
+    onGameEnd(data) {
+        // 服务器广播的游戏结束事件
+        console.log("[GameRoom] 收到 game_end_notification (游戏结束):", data);
+        
+        // 显示游戏结束信息
+        if (data && data.players) {
+            // 找出获胜者（最高分玩家）
+            let winner = null;
+            let maxScore = -1;
+            
+            data.players.forEach(player => {
+                const score = player.currentScore || player.current_score || player.score || 0;
+                if (score > maxScore) {
+                    maxScore = score;
+                    winner = player;
+                }
+            });
+            
+            // 显示游戏结果
+            let resultMessage = "游戏结束！\n\n最终积分：\n";
+            data.players.forEach(player => {
+                const score = player.currentScore || player.current_score || player.score || 0;
+                const isWinner = winner && (player.id === winner.id || player.uid === winner.id);
+                resultMessage += `玩家 ${player.id || player.uid}: ${score}分${isWinner ? ' (获胜者!)' : ''}\n`;
+            });
+            
+            // 显示结果弹窗
+            if (typeof wx !== 'undefined') {
+                wx.showModal({
+                    title: '游戏结束',
+                    content: resultMessage,
+                    showCancel: false,
+                    confirmText: '确定',
+                    success: () => {
+                        this.returnToWaitingRoom();
+                    }
+                });
+            } else {
+                alert(resultMessage);
+                this.returnToWaitingRoom();
+            }
+        } else {
+            // 没有详细数据的情况下，直接返回等待房间
+            console.log("[GameRoom] 游戏结束，返回等待房间");
+            this.returnToWaitingRoom();
+        }
+    }
+    
+    // 返回等待房间
+    returnToWaitingRoom() {
+        console.log("[GameRoom] 返回等待房间");
+        
+        // 隐藏游戏界面
+        this.hide();
+        
+        // 重置游戏状态
+        this.gameStarted = false;
+        this.hasPlayedCard = false;
+        this.skipTurnClicked = false;
+        this.lastCurrentTurn = -1;
+        
+        // 清除定时器
+        if (this.turnTimer) {
+            clearInterval(this.turnTimer);
+            this.turnTimer = null;
+        }
+        
+        // 清除手牌选择状态
+        if (this.handCardArea) {
+            this.handCardArea.clearSelection();
+        }
+        
+        // 重置桌面卡牌
+        this.tableCards = [];
+        
+        // 切换到房间等待状态
+        GameStateManager.setGameState(GameStateManager.GAME_STATES.IN_ROOM);
+        
+        console.log("[GameRoom] 已切换到房间等待状态，玩家可以继续准备开始下一局");
+    }
+    
     onGameActionFailed(data) {
         console.log("[GameRoom] 游戏动作失败:", data);
         
@@ -570,6 +656,25 @@ class GameRoom {
         this.tableArea.x = centerX - this.tableArea.width / 2;
         this.tableArea.y = centerY - this.tableArea.height / 2;
         
+        // 固定提示信息 - 始终显示操作说明（放在最前面确保总是显示）
+        this.ctx.fillStyle = '#4CAF50';
+        this.ctx.font = 'bold 16px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        
+        // 绘制背景
+        const textWidth = 250;
+        const textHeight = 25;
+        const textX = this.canvas.width / 2;
+        const textY = this.tableArea.y - 25;
+        
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        this.ctx.fillRect(textX - textWidth/2, textY - textHeight/2, textWidth, textHeight);
+        
+        // 绘制文字
+        this.ctx.fillStyle = '#4CAF50';
+        this.ctx.fillText('请选择手牌后点击桌面上的序号出牌', textX, textY);
+        
         // 保存桌面区域信息供点击检测使用
         this.tableInsertPositions = [];
         
@@ -672,51 +777,7 @@ class GameRoom {
             });
         });
         
-        // 添加操作提示 - 更明显的位置和颜色
-        const gameState = this.gameStateManager.gameState;
-        const isMyTurn = this.isMyTurn();
-        const selectedCard = this.handCardArea.getSelectedCard();
-        
-        if (isMyTurn && selectedCard) {
-            // 如果轮到自己且选中了手牌，显示出牌提示
-            this.ctx.fillStyle = '#FFD700';
-            this.ctx.font = 'bold 16px Arial';
-            this.ctx.textAlign = 'center';
-            this.ctx.textBaseline = 'middle';
-            
-            // 绘制背景
-            const textWidth = 200;
-            const textHeight = 25;
-            const textX = this.canvas.width / 2;
-            const textY = this.tableArea.y - 25;
-            
-            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-            this.ctx.fillRect(textX - textWidth/2, textY - textHeight/2, textWidth, textHeight);
-            
-            // 绘制文字
-            this.ctx.fillStyle = '#FFD700';
-            this.ctx.fillText('点击数字标签出牌', textX, textY);
-            
-        } else if (isMyTurn && !selectedCard) {
-            // 如果轮到自己但没选中手牌，显示选牌提示
-            this.ctx.fillStyle = '#FFA726';
-            this.ctx.font = 'bold 16px Arial';
-            this.ctx.textAlign = 'center';
-            this.ctx.textBaseline = 'middle';
-            
-            // 绘制背景
-            const textWidth = 150;
-            const textHeight = 25;
-            const textX = this.canvas.width / 2;
-            const textY = this.tableArea.y - 25;
-            
-            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-            this.ctx.fillRect(textX - textWidth/2, textY - textHeight/2, textWidth, textHeight);
-            
-            // 绘制文字
-            this.ctx.fillStyle = '#FFA726';
-            this.ctx.fillText('请先选择手牌', textX, textY);
-        }
+        // 固定提示信息已经在方法开头绘制了，这里不再重复
     }
 
     // 绘制插入位置标签

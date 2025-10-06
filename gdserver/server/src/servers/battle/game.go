@@ -297,7 +297,15 @@ func (g *WordCardGame) IsGameOver() bool {
 }
 
 func (g *WordCardGame) EndGame() {
+	log.Printf("[Battle] Game ending, notifying all players")
+	
+	// 发送游戏结束通知
+	if g.Room != nil {
+		g.BroadcastGameEnd()
+	}
+	
 	// 游戏结束逻辑，可添加奖励发放等
+	log.Printf("[Battle] Game ended successfully")
 }
 
 // BroadcastPlayerPositionUpdate 广播玩家位置更新
@@ -646,4 +654,37 @@ func (g *WordCardGame) handleSurrender(playerID uint64) {
 
 	// 标记该玩家已投降，将其从游戏中移除
 	g.RemovePlayer(playerID)
+}
+
+// BroadcastGameEnd 广播游戏结束通知
+func (g *WordCardGame) BroadcastGameEnd() {
+	if g.Room == nil {
+		log.Printf("[Battle] Cannot broadcast game end: Room is nil")
+		return
+	}
+
+	log.Printf("[Battle] Broadcasting game end notification to all players")
+
+	// 创建游戏结束通知，包含最终玩家状态
+	gameEndNotification := &pb.GameEndNotification{
+		RoomId: "", // Room ID 将在 Room 层设置
+	}
+
+	// 添加所有玩家的最终状态
+	for _, p := range g.Players {
+		playerState := &pb.BattlePlayer{
+			Id:           p.ID,
+			Name:         p.Name,
+			CurrentScore: int32(p.Score),
+			// 可以添加胜利次数等其他信息
+		}
+		gameEndNotification.Players = append(gameEndNotification.Players, playerState)
+	}
+
+	// 通过房间广播游戏结束通知
+	if roomInterface, ok := g.Room.(interface{ BroadcastGameEnd(*pb.GameEndNotification) }); ok {
+		roomInterface.BroadcastGameEnd(gameEndNotification)
+	} else {
+		log.Printf("[Battle] Room does not support BroadcastGameEnd method")
+	}
 }
