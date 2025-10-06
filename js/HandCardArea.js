@@ -87,9 +87,13 @@ class HandCardArea {
         //     console.log(`[HandCardArea] 添加测试数据，总数: ${this.handCards.length} 张`);
         // }
         
+        const previousSelected = this.selectedCardIndex;
         this.selectedCardIndex = -1;
         this.calculateLayout();
         console.log(`[HandCardArea] 设置手牌: ${this.handCards.length} 张`);
+        
+        // 触发卡牌选择事件，通知游戏房间更新提示信息
+        this.onCardSelected && this.onCardSelected(-1, null, previousSelected);
     }
     
     // 计算布局
@@ -289,14 +293,19 @@ class HandCardArea {
         const previousSelected = this.selectedCardIndex;
         this.selectedCardIndex = index;
         
-        console.log(`[HandCardArea] 选择卡牌: ${index} - ${this.handCards[index].word}`);
+        const selectedCard = this.handCards[index];
+        if (selectedCard) {
+            console.log(`[HandCardArea] 选择卡牌: ${index} - ${selectedCard.word}`);
+        } else {
+            console.log(`[HandCardArea] 选择卡牌: ${index} - 未知卡牌`);
+        }
         console.log(`[HandCardArea] 当前选中索引: ${this.selectedCardIndex}`);
         
         // 立即重新渲染以显示选中效果
         this.render();
         
         // 触发卡牌选择事件
-        this.onCardSelected && this.onCardSelected(index, this.handCards[index], previousSelected);
+        this.onCardSelected && this.onCardSelected(index, selectedCard, previousSelected);
     }
     
     // 获取选中的卡牌
@@ -313,7 +322,10 @@ class HandCardArea {
     // 清除选择
     clearSelection() {
         this.selectedCardIndex = -1;
-        // 不重新计算布局，避免循环调用
+        // 重新渲染以更新显示
+        this.render();
+        // 触发卡牌选择事件，通知游戏房间更新提示信息
+        this.onCardSelected && this.onCardSelected(-1, null, -1);
     }
     
     // 出牌
@@ -354,7 +366,7 @@ class HandCardArea {
             return;
         }
         
-        console.log('[HandCardArea] 出牌:', selectedCard.word);
+        console.log('[HandCardArea] 出牌:', selectedCard.word || '未知卡牌');
         
         // 调用出牌回调（不指定位置，由回调函数决定）
         if (this.onCardPlayed) {
@@ -362,8 +374,11 @@ class HandCardArea {
         }
         
         // 清除选中状态
+        const previousSelected = this.selectedCardIndex;
         this.selectedCardIndex = -1;
         this.render();
+        // 触发卡牌选择事件，通知游戏房间更新提示信息
+        this.onCardSelected && this.onCardSelected(-1, null, previousSelected);
     }
     
     // 显示手牌区域

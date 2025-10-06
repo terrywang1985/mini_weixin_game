@@ -307,6 +307,11 @@ export default class Main {
     window.addEventListener('unhandledrejection', (event) => {
       console.error("未处理的Promise错误:", event.reason);
     });
+    
+    // 将当前实例保存到全局变量，供其他组件访问
+    if (typeof window !== 'undefined') {
+      window.mainInstance = this;
+    }
   }
   
   updateCanvasSize() {
@@ -433,7 +438,7 @@ export default class Main {
     const centerY = this.canvas.height / 2;
     
     // 绘制错误背景
-    this.ctx.fillStyle = '#e74c3c';
+    this.ctx.fillStyle = '#34495e';
     this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     
     // 绘制错误信息
@@ -441,23 +446,56 @@ export default class Main {
     this.ctx.font = 'bold 24px Arial';
     this.ctx.textAlign = 'center';
     this.ctx.textBaseline = 'middle';
-    this.ctx.fillText('连接失败', centerX, centerY - 30);
+    this.ctx.fillText('无法连接到服务器', centerX, centerY - 50);
     
     this.ctx.font = '16px Arial';
-    this.ctx.fillText('请检查网络连接', centerX, centerY + 10);
+    this.ctx.fillText('请检查网络连接或服务器状态', centerX, centerY - 10);
     
     // 重试按钮
-    const buttonWidth = 120;
-    const buttonHeight = 40;
+    const buttonWidth = 150;
+    const buttonHeight = 50;
     const buttonX = centerX - buttonWidth / 2;
-    const buttonY = centerY + 50;
+    const buttonY = centerY + 30;
     
-    this.ctx.fillStyle = '#ffffff';
+    // 绘制按钮背景
+    this.ctx.fillStyle = '#3498db';
     this.ctx.fillRect(buttonX, buttonY, buttonWidth, buttonHeight);
     
-    this.ctx.fillStyle = '#e74c3c';
-    this.ctx.font = '16px Arial';
-    this.ctx.fillText('重试', centerX, buttonY + buttonHeight / 2);
+    // 绘制按钮边框
+    this.ctx.strokeStyle = '#2980b9';
+    this.ctx.lineWidth = 2;
+    this.ctx.strokeRect(buttonX, buttonY, buttonWidth, buttonHeight);
+    
+    // 绘制按钮文字
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.font = '18px Arial';
+    this.ctx.fillText('点击重连', centerX, buttonY + buttonHeight / 2);
+    
+    // 添加点击事件监听
+    this.setupRetryButton(buttonX, buttonY, buttonWidth, buttonHeight);
+  }
+  
+  setupRetryButton(x, y, width, height) {
+    // 移除之前的事件监听器（如果有的话）
+    if (this.retryButtonHandler) {
+      this.canvas.removeEventListener('click', this.retryButtonHandler);
+    }
+    
+    // 创建新的事件监听器
+    this.retryButtonHandler = (event) => {
+      const rect = this.canvas.getBoundingClientRect();
+      const mouseX = event.clientX - rect.left;
+      const mouseY = event.clientY - rect.top;
+      
+      // 检查点击是否在按钮区域内
+      if (mouseX >= x && mouseX <= x + width && mouseY >= y && mouseY <= y + height) {
+        // 点击了重试按钮，执行重连逻辑
+        this.reconnect();
+      }
+    };
+    
+    // 添加事件监听器
+    this.canvas.addEventListener('click', this.retryButtonHandler);
   }
   
   showReconnectDialog() {
@@ -485,6 +523,12 @@ export default class Main {
     this.isLoading = true;
     this.loadingMessage = "正在重新连接...";
     GameStateManager.setGameState(GameStateManager.GAME_STATES.LOADING);
+    
+    // 移除之前的重试按钮事件监听器
+    if (this.retryButtonHandler) {
+      this.canvas.removeEventListener('click', this.retryButtonHandler);
+      this.retryButtonHandler = null;
+    }
     
     try {
       await this.startAutoLogin();

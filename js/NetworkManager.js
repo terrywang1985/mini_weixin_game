@@ -5,6 +5,7 @@
 
 import ProtobufManager from './ProtobufManager.js';
 import GameStateManager from './GameStateManager.js';
+import ErrorMessageHandler from './ErrorMessageHandler.js';
 
 class NetworkManager {
     constructor() {
@@ -111,7 +112,9 @@ class NetworkManager {
             }
         } catch (error) {
             console.error("HTTP请求失败:", error);
-            this.emit('http_login_failed', error.message);
+            // 发送更友好的错误信息
+            const userFriendlyError = "无法连接到服务器，请检查网络连接或服务器状态";
+            this.emit('http_login_failed', userFriendlyError);
             return false;
         }
     }
@@ -698,7 +701,15 @@ class NetworkManager {
             this.emit('room_joined');
             console.log("加入房间成功");
         } else {
-            console.error("加入房间失败");
+            // 使用统一的错误处理工具
+            const errorMsg = ErrorMessageHandler.getUserFriendlyMessage(response.ret);
+            console.log("加入房间失败:", errorMsg);
+            
+            // 发送事件通知UI显示错误信息
+            this.emit('room_join_failed', {
+                errorCode: response.ret,
+                errorMessage: errorMsg
+            });
         }
     }
     
@@ -812,35 +823,14 @@ class NetworkManager {
         
         // 检查响应结果
         if (response.ret !== 0) {
-            // 如果操作失败，显示错误信息
-        const errorMessages = {
-            0: "成功",
-            1: "无效参数",
-            2: "服务器错误",
-            3: "认证失败",
-            4: "未找到",
-            5: "已存在",
-            6: "不允许的操作",
-            7: "不支持的操作",
-            8: "超时",
-            9: "无效状态",
-            10: "无效动作",
-            11: "无效卡牌",
-            12: "无效房间",
-            13: "无效用户",
-            14: "玩家已在房间中",
-            15: "不是你的回合",
-            16: "卡牌放置顺序不符合语法规则"
-        };
-        
-        const errorMsg = errorMessages[response.ret] || "未知错误";
-        console.log("[Network] 游戏动作执行失败:", errorMsg);
+            const errorMsg = ErrorMessageHandler.getUserFriendlyMessage(response.ret);
+            console.log("[Network] 游戏动作执行失败:", errorMsg);
 
-        // 可以触发事件通知UI显示错误信息
-        this.emit('game_action_failed', {
-            errorCode: response.ret,
-            errorMessage: errorMsg
-        });
+            // 触发事件通知UI显示错误信息
+            this.emit('game_action_failed', {
+                errorCode: response.ret,
+                errorMessage: errorMsg
+            });
         } else {
             console.log("[Network] 游戏动作执行成功");
             // 可以触发事件通知UI更新

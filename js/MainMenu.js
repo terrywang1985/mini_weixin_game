@@ -3,6 +3,7 @@
  */
 
 import GameStateManager from './GameStateManager.js';
+import ErrorMessageHandler from './ErrorMessageHandler.js';
 
 class MainMenu {
     constructor(canvas, networkManager) {
@@ -41,6 +42,11 @@ class MainMenu {
             } else {
                 this.hide();
             }
+        });
+        
+        // 监听加入房间失败事件
+        this.networkManager.on('room_join_failed', (errorInfo) => {
+            this.handleRoomJoinFailed(errorInfo);
         });
     }
     
@@ -83,11 +89,17 @@ class MainMenu {
                 const touchX = touch.clientX;
                 const touchY = touch.clientY;
                 
+                // 检查是否点击了按钮
                 this.buttons.forEach(button => {
                     if (this.isPointInButton(touchX, touchY, button)) {
                         button.onClick();
                     }
                 });
+                
+                // 检查是否点击了重连按钮
+                if (this.reconnectButton && this.isPointInButton(touchX, touchY, this.reconnectButton)) {
+                    this.onReconnectClick();
+                }
             });
         } else {
             // 浏览器环境的事件处理
@@ -114,11 +126,17 @@ class MainMenu {
                 const mouseX = e.clientX - rect.left;
                 const mouseY = e.clientY - rect.top;
                 
+                // 检查是否点击了按钮
                 this.buttons.forEach(button => {
                     if (this.isPointInButton(mouseX, mouseY, button)) {
                         button.onClick();
                     }
                 });
+                
+                // 检查是否点击了重连按钮
+                if (this.reconnectButton && this.isPointInButton(mouseX, mouseY, this.reconnectButton)) {
+                    this.onReconnectClick();
+                }
             });
             
             // 触摸事件（移动端浏览器支持）
@@ -131,11 +149,17 @@ class MainMenu {
                 const touchX = touch.clientX - rect.left;
                 const touchY = touch.clientY - rect.top;
                 
+                // 检查是否点击了按钮
                 this.buttons.forEach(button => {
                     if (this.isPointInButton(touchX, touchY, button)) {
                         button.onClick();
                     }
                 });
+                
+                // 检查是否点击了重连按钮
+                if (this.reconnectButton && this.isPointInButton(touchX, touchY, this.reconnectButton)) {
+                    this.onReconnectClick();
+                }
             });
         }
     }
@@ -250,6 +274,42 @@ class MainMenu {
         const statusText = networkStatus.isConnected && networkStatus.isAuthenticated ? 
             '已连接' : '未连接';
         this.ctx.fillText(statusText, statusX + statusRadius + 10, statusY);
+        
+        // 如果未连接，显示重连按钮
+        if (!networkStatus.isConnected || !networkStatus.isAuthenticated) {
+            this.drawReconnectButton();
+        }
+    }
+    
+    drawReconnectButton() {
+        const buttonWidth = 100;
+        const buttonHeight = 30;
+        const buttonX = this.canvas.width - buttonWidth - 20;
+        const buttonY = 20;
+        
+        // 绘制按钮背景
+        this.ctx.fillStyle = '#3498db';
+        this.ctx.fillRect(buttonX, buttonY, buttonWidth, buttonHeight);
+        
+        // 绘制按钮边框
+        this.ctx.strokeStyle = this.config.textColor;
+        this.ctx.lineWidth = 1;
+        this.ctx.strokeRect(buttonX, buttonY, buttonWidth, buttonHeight);
+        
+        // 绘制按钮文字
+        this.ctx.fillStyle = this.config.textColor;
+        this.ctx.font = '14px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText('重新连接', buttonX + buttonWidth / 2, buttonY + buttonHeight / 2);
+        
+        // 保存重连按钮位置，用于事件处理
+        this.reconnectButton = {
+            x: buttonX,
+            y: buttonY,
+            width: buttonWidth,
+            height: buttonHeight
+        };
     }
     
     onCreateRoomClick() {
@@ -275,6 +335,15 @@ class MainMenu {
         
         // 弹出输入框让用户输入房间ID
         this.showJoinRoomDialog();
+    }
+    
+    // 处理重连按钮点击
+    onReconnectClick() {
+        console.log("点击重新连接");
+        // 触发重连事件
+        if (typeof window !== 'undefined' && window.mainInstance) {
+            window.mainInstance.reconnect();
+        }
     }
     
     showJoinRoomDialog() {
@@ -321,21 +390,22 @@ class MainMenu {
         this.networkManager.createRoom(defaultName);
     }
     
+    // 处理加入房间失败
+    handleRoomJoinFailed(errorInfo) {
+        const { errorCode, errorMessage } = errorInfo;
+        console.log("加入房间失败:", errorCode, errorMessage);
+        
+        // 使用统一的错误处理工具
+        const userFriendlyMessage = ErrorMessageHandler.handleRoomError(errorCode);
+        
+        this.showMessage(userFriendlyMessage);
+    }
+    
     showMessage(message) {
         // 显示消息提示
         console.log("消息提示:", message);
         
-        // 在微信小游戏中可以使用 wx.showToast
-        if (typeof wx !== 'undefined' && wx.showToast) {
-            wx.showToast({
-                title: message,
-                icon: 'none',
-                duration: 2000
-            });
-        } else {
-            // 开发环境使用alert
-            alert(message);
-        }
+        ErrorMessageHandler.showMessage(message);
     }
     
     // 更新画布尺寸
@@ -353,6 +423,7 @@ class MainMenu {
     destroy() {
         this.isVisible = false;
         this.buttons = [];
+        this.reconnectButton = null;
         
         // 移除事件监听器
         this.canvas.removeEventListener('mousemove', this.onMouseMove);

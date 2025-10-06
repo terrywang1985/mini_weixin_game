@@ -25,7 +25,15 @@ class GameRoom {
         // 手牌区域
         this.handCardArea = new HandCardArea(canvas, this.ctx);
         this.handCardArea.onCardSelect((index, card, previousIndex) => {
-            console.log(`[GameRoom] 选择了卡牌 ${index}: ${card.word}`);
+            if (card) {
+                console.log(`[GameRoom] 选择了卡牌 ${index}: ${card.word}`);
+            } else {
+                console.log(`[GameRoom] 清除卡牌选择，索引: ${index}`);
+            }
+            // 当手牌选择状态改变时，重新渲染游戏房间以更新提示信息
+            if (this.isVisible) {
+                this.render();
+            }
         });
         
         // 设置出牌回调
@@ -430,7 +438,7 @@ class GameRoom {
     
     // 处理出牌
     onPlayCard(cardIndex, card) {
-        console.log(`[GameRoom] 出牌: 索引=${cardIndex}, 卡牌=${card.word}`);
+        console.log(`[GameRoom] 出牌: 索引=${cardIndex}, 卡牌=${card?.word || '未知卡牌'}`);
         
         // 检查是否轮到自己
         const gameState = this.gameStateManager.gameState;
@@ -477,8 +485,8 @@ class GameRoom {
         const placeCardAction = {
             cardId: cardIndex,
             targetIndex: targetIndex,
-            word: card.word,
-            wordClass: card.wordClass
+            word: card?.word || '',
+            wordClass: card?.wordClass || ''
         };
         
         console.log(`[GameRoom] 发送出牌消息:`, placeCardAction);
@@ -654,7 +662,7 @@ class GameRoom {
                 this.ctx.font = '12px Arial';
                 this.ctx.textAlign = 'center';
                 this.ctx.textBaseline = 'middle';
-                this.ctx.fillText(card.word, cardX + cardWidth / 2, cardY + cardHeight / 2);
+                this.ctx.fillText(card?.word || '未知', cardX + cardWidth / 2, cardY + cardHeight / 2);
                 
                 // 绘制下一个插入位置标签（确保不超出右边界）
                 const nextPositionX = cardX + cardWidth + cardSpacing / 2;
@@ -787,7 +795,7 @@ class GameRoom {
             // 在房间状态下，不设置当前玩家，等待游戏开始
             currentTurn = -1;
             currentPlayer = null;
-            hasValidGameState = false; // 明确设置为false，因为没有游戏回合信息
+            hasValidGameState = false; // 显确设置为false，因为没有游戏回合信息
         } else {
             // 如果完全没有数据，不显示任何内容
             return;
@@ -1249,7 +1257,7 @@ class GameRoom {
         }
         
         // 获取当前句子
-        const sentence = this.tableCards.map(card => card.word).join('');
+        const sentence = this.tableCards.map(card => card?.word || '').join('');
         if (!sentence) {
             return;
         }
@@ -1316,7 +1324,7 @@ class GameRoom {
     
     // 添加新的出牌方法，支持指定位置
     playCardToPosition(cardIndex, card, position) {
-        console.log(`[GameRoom] 出牌到位置: 索引=${cardIndex}, 卡牌=${card.word}, 位置=${position}`);
+        console.log(`[GameRoom] 出牌到位置: 索引=${cardIndex}, 卡牌=${card?.word || '未知卡牌'}, 位置=${position}`);
         
         // 检查是否轮到自己
         const gameState = this.gameStateManager.gameState;
@@ -1365,8 +1373,8 @@ class GameRoom {
         const placeCardAction = {
             cardId: cardIndex,
             targetIndex: targetIndex,
-            word: card.word,
-            wordClass: card.wordClass
+            word: card?.word || '',
+            wordClass: card?.wordClass || ''
         };
         
         console.log(`[GameRoom] 发送出牌消息:`, placeCardAction);

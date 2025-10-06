@@ -3,6 +3,7 @@
  */
 
 import GameStateManager from './GameStateManager.js';
+import ErrorMessageHandler from './ErrorMessageHandler.js';
 
 class WaitingRoom {
     constructor(canvas, networkManager) {
@@ -569,6 +570,24 @@ class WaitingRoom {
     onRoomJoined() {
         console.log("成功加入房间");
         this.setupLayout();
+    }
+    
+    // 处理加入房间失败
+    handleRoomJoinFailed(errorInfo) {
+        const { errorCode, errorMessage } = errorInfo;
+        console.log("加入房间失败:", errorCode, errorMessage);
+        
+        // 使用统一的错误处理工具
+        const userFriendlyMessage = ErrorMessageHandler.handleRoomError(errorCode);
+        
+        this.showMessage(userFriendlyMessage);
+    }
+    
+    // 显示消息提示
+    showMessage(message) {
+        console.log("消息提示:", message);
+        
+        ErrorMessageHandler.showMessage(message);
     }
     
     onRoomCreated(room) {

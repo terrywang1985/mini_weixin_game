@@ -3,6 +3,7 @@
  */
 
 import GameStateManager from './GameStateManager.js';
+import ErrorMessageHandler from './ErrorMessageHandler.js';
 
 class RoomList {
     constructor(canvas, networkManager) {
@@ -56,6 +57,11 @@ class RoomList {
         // 监听网络事件
         this.networkManager.on('room_list_received', (rooms) => {
             this.updateRoomList(rooms);
+        });
+        
+        // 监听加入房间失败事件
+        this.networkManager.on('room_join_failed', (errorInfo) => {
+            this.handleRoomJoinFailed(errorInfo);
         });
     }
     
@@ -430,15 +436,18 @@ class RoomList {
     showMessage(message) {
         console.log("消息提示:", message);
         
-        if (typeof wx !== 'undefined' && wx.showToast) {
-            wx.showToast({
-                title: message,
-                icon: 'none',
-                duration: 2000
-            });
-        } else {
-            alert(message);
-        }
+        ErrorMessageHandler.showMessage(message);
+    }
+    
+    // 处理加入房间失败
+    handleRoomJoinFailed(errorInfo) {
+        const { errorCode, errorMessage } = errorInfo;
+        console.log("加入房间失败:", errorCode, errorMessage);
+        
+        // 使用统一的错误处理工具
+        const userFriendlyMessage = ErrorMessageHandler.handleRoomError(errorCode);
+        
+        this.showMessage(userFriendlyMessage);
     }
     
     // 刷新房间列表
