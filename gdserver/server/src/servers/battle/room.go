@@ -102,6 +102,16 @@ func (room *BattleRoom) RemovePlayer(playerID uint64) {
 			// 广播更新后的游戏状态
 			room.BroadcastGameState()
 		}
+		
+		// 检查房间是否为空，如果为空则销毁房间
+		if len(room.Players) == 0 {
+			slog.Info("Room is now empty, scheduling room destruction", "room_id", room.BattleID)
+			// 延迟销毁房间，给客户端一些时间处理
+			go func() {
+				time.Sleep(1 * time.Second)
+				room.DestroyRoom()
+			}()
+		}
 	}
 }
 
@@ -143,6 +153,15 @@ func (room *BattleRoom) AllPlayersReady() bool {
 }
 
 func (room *BattleRoom) StartGame() {
+	slog.Info("Starting new game", "room_id", room.BattleID, "players_count", len(room.Players))
+	
+	// 如果没有游戏实例（游戏结束后），重新创建
+	if room.Game == nil {
+		room.Game = GameFactory(room.GameType)
+		room.Game.SetRoomRef(room)
+		slog.Info("Created new game instance", "room_id", room.BattleID)
+	}
+	
 	// 将房间玩家转换为游戏玩家
 	var players []*Player
 	for id, info := range room.Players {
@@ -373,12 +392,22 @@ func (room *BattleRoom) handleCharMoveInRoom(cmd Command) {
 func (room *BattleRoom) EndGame() {
 	slog.Info("Game ended", "room", room.BattleID)
 	
-	room.GameStarted = false // 标记游戏已结束
-
-	// 清理房间
-	room.Server.RoomsMutex.Lock()
-	delete(room.Server.BattleRooms, room.BattleID)
-	room.Server.RoomsMutex.Unlock()
+	// 标记游戏已结束，但保留房间
+	room.GameStarted = false
+	
+	// 重置游戏实例，为下一局做准备
+	if room.Game != nil {
+		room.Game.EndGame()
+		room.Game = nil
+	}
+	
+	// 清空准备状态，玩家需要重新准备
+	room.ReadyPlayers = make(map[uint64]bool)
+	
+	slog.Info("Game ended, room remains active for next game", "room_id", room.BattleID, "players_count", len(room.Players))
+	
+	// 广播房间状态更新，显示玩家可以重新准备
+	room.BroadcastRoomStatus()
 }
 
 func (room *BattleRoom) BroadcastRoomStatus() {
@@ -652,4 +681,22 @@ func (room *BattleRoom) NotifyGameEndToPlayer(playerID uint64, gameEndNotificati
 	} else {
 		slog.Info("Game end notification sent successfully", "player_id", playerID)
 	}
+}
+
+// DestroyRoom 删除房间（只有当房间里没有玩家时才调用）
+func (room *BattleRoom) DestroyRoom() {
+	slog.Info("Destroying empty room", "room_id", room.BattleID)
+	
+	// 确保游戏已结束
+	if room.Game != nil {
+		room.Game.EndGame()
+		room.Game = nil
+	}
+	
+	// 从服务器移除房间
+	room.Server.RoomsMutex.Lock()
+	delete(room.Server.BattleRooms, room.BattleID)
+	room.Server.RoomsMutex.Unlock()
+	
+	slog.Info("Room destroyed successfully", "room_id", room.BattleID)
 }

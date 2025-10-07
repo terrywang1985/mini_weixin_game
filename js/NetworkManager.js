@@ -455,15 +455,34 @@ class NetworkManager {
     
     // 离开房间
     leaveRoom() {
-        if (!this.currentRoomId) {
-            console.log("没有当前房间ID，无法离开房间");
+        console.log("[NetworkManager] leaveRoom() 被调用");
+        console.log("[NetworkManager] 当前房间ID:", this.currentRoomId);
+        console.log("[NetworkManager] GameStateManager房间:", GameStateManager.currentRoom);
+        
+        // 尝试从多个来源获取房间ID
+        let roomId = this.currentRoomId;
+        if (!roomId && GameStateManager.currentRoom) {
+            roomId = GameStateManager.currentRoom.id;
+            console.log("[NetworkManager] 从GameStateManager获取房间ID:", roomId);
+        }
+        
+        if (!roomId) {
+            console.error("[NetworkManager] 没有找到房间ID，无法离开房间");
+            console.log("[NetworkManager] this.currentRoomId:", this.currentRoomId);
+            console.log("[NetworkManager] GameStateManager.currentRoom:", GameStateManager.currentRoom);
             return;
         }
         
-        console.log("离开房间:", this.currentRoomId);
-        const finalPacket = this.protobuf.createLeaveRoomRequest(this.userUid);
-        this.sendWebSocketMessage(finalPacket);
-        this.currentRoomId = "";
+        try {
+            console.log("[NetworkManager] 开始离开房间:", roomId);
+            const finalPacket = this.protobuf.createLeaveRoomRequest(this.userUid);
+            console.log("[NetworkManager] 离开房间请求包已创建");
+            this.sendWebSocketMessage(finalPacket);
+            console.log("[NetworkManager] 离开房间请求已发送");
+            this.currentRoomId = "";
+        } catch (error) {
+            console.error("[NetworkManager] 离开房间时发生错误:", error);
+        }
     }
     
     // 发送游戏动作
@@ -715,14 +734,33 @@ class NetworkManager {
     
     // 处理离开房间响应
     handleLeaveRoomResponse(data) {
-        const response = this.protobuf.deserializeMessage(data);
-        if (!response) return;
+        console.log("[NetworkManager] 开始处理离开房间响应");
+        const response = this.protobuf.parseLeaveRoomResponse(data);
+        if (!response) {
+            console.error("[NetworkManager] 无法解析离开房间响应");
+            return;
+        }
+        
+        console.log("[NetworkManager] 离开房间响应:", response);
         
         if (response.ret === 0) {
-            console.log("离开房间成功");
+            console.log("[Network] 离开房间成功");
             this.currentRoomId = "";
+            
+            // 确保 GameStateManager 也更新状态
+            // 注意：这里不要重复调用 GameStateManager.leaveRoom()，
+            // 因为在 WaitingRoom.leaveRoom() 中已经调用过了
+            // 我们只需要确认状态同步
+            console.log("[Network] 离开房间请求处理完成");
         } else {
-            console.error("离开房间失败");
+            console.error("[Network] 离开房间失败，错误码:", response.ret);
+            console.error("[Network] 错误信息:", response.message);
+            
+            // 发送事件通知UI显示错误信息
+            this.emit('room_leave_failed', {
+                errorCode: response.ret,
+                errorMessage: response.message
+            });
         }
     }
     

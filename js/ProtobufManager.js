@@ -193,6 +193,31 @@ class ProtobufManager {
         return new Uint8Array(fields);
     }
     
+    // 编码LeaveRoomRequest
+    encodeLeaveRoomRequest(playerId) {
+        console.log("[ProtobufManager] encodeLeaveRoomRequest 被调用，playerId:", playerId);
+        
+        // LeaveRoomRequest 消息结构:
+        // 1: playerId (string)
+        
+        const fields = [];
+        
+        // 编码玩家ID (field 1, string)
+        if (playerId) {
+            const playerIdBytes = new TextEncoder().encode(playerId.toString());
+            const field1 = [];
+            field1.push(0x0A); // field 1, wire type 2 (length-delimited)
+            field1.push(...this.encodeVarint(playerIdBytes.length));
+            field1.push(...playerIdBytes);
+            fields.push(...field1);
+            console.log("[ProtobufManager] 离开房间请求编码完成，字段长度:", fields.length);
+        } else {
+            console.error("[ProtobufManager] playerId为空，无法编码离开房间请求");
+        }
+        
+        return new Uint8Array(fields);
+    }
+    
     // 编码GetReadyRequest
     encodeGetReadyRequest(playerId, isReady) {
         // GetReadyRequest proto: string playerId = 1; bool is_ready = 2;
@@ -326,6 +351,17 @@ class ProtobufManager {
         
         const messageData = this.encodeJoinRoomRequest(roomId);
         return this.createMessage(this.MESSAGE_IDS.JOIN_ROOM_REQUEST, messageData);
+    }
+    
+    // 创建离开房间请求
+    createLeaveRoomRequest(playerId) {
+        console.log("[ProtobufManager] createLeaveRoomRequest 被调用，playerId:", playerId);
+        this.ensureInitialized();
+        
+        const messageData = this.encodeLeaveRoomRequest(playerId);
+        const result = this.createMessage(this.MESSAGE_IDS.LEAVE_ROOM_REQUEST, messageData);
+        console.log("[ProtobufManager] 离开房间请求消息创建完成，长度:", result.length);
+        return result;
     }
     
     // 解码varint
@@ -894,6 +930,71 @@ class ProtobufManager {
             };
         } catch (error) {
             console.error('解析加入房间响应失败:', error);
+            return { ret: 2, success: false, message: '解析失败: ' + error.message };
+        }
+    }
+    
+    // 解析离开房间响应
+    parseLeaveRoomResponse(data) {
+        console.log('[ProtobufManager] 解析离开房间响应数据，长度:', data ? data.length : 'null');
+        
+        if (!data || data.length === 0) {
+            console.log('[ProtobufManager] 离开房间响应数据为空，按成功处理');
+            return { ret: 0, success: true, message: '成功', room: null };
+        }
+        
+        try {
+            // LeaveRoomResponse 包含: ErrorCode ret = 1; Room room = 2;
+            let offset = 0;
+            let errorCode = 0;
+            let room = null;
+            
+            while (offset < data.length) {
+                const tag = data[offset];
+                const fieldNumber = tag >> 3;
+                const wireType = tag & 0x07;
+                offset++;
+                
+                console.log(`[ProtobufManager] 解析LeaveRoomResponse字段: field=${fieldNumber}, wireType=${wireType}`);
+                
+                if (fieldNumber === 1 && wireType === 0) {
+                    // ret字段 (ErrorCode)
+                    const result = this.decodeVarint(data, offset);
+                    errorCode = result.value;
+                    offset = result.nextOffset;
+                    console.log(`[ProtobufManager] 离开房间错误码: ${errorCode}`);
+                } else if (fieldNumber === 2 && wireType === 2) {
+                    // room字段 (Room)
+                    const lengthResult = this.decodeVarint(data, offset);
+                    offset = lengthResult.nextOffset;
+                    const roomData = data.slice(offset, offset + lengthResult.value);
+                    offset += lengthResult.value;
+                    
+                    room = this.parseRoom(roomData);
+                    console.log(`[ProtobufManager] 解析到房间信息:`, room);
+                } else {
+                    // 跳过未知字段
+                    if (wireType === 0) {
+                        const result = this.decodeVarint(data, offset);
+                        offset = result.nextOffset;
+                    } else if (wireType === 2) {
+                        const lengthResult = this.decodeVarint(data, offset);
+                        offset = lengthResult.nextOffset + lengthResult.value;
+                    }
+                }
+            }
+            
+            const success = errorCode === 0;
+            const message = this.getErrorMessage(errorCode);
+            
+            return {
+                ret: errorCode,
+                success: success,
+                message: message,
+                room: room
+            };
+        } catch (error) {
+            console.error('[ProtobufManager] 解析离开房间响应失败:', error);
             return { ret: 2, success: false, message: '解析失败: ' + error.message };
         }
     }

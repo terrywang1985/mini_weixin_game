@@ -564,6 +564,17 @@ class WaitingRoom {
     }
     
     leaveRoom() {
+        console.log("[WaitingRoom] 开始离开房间流程");
+        
+        // 发送离开房间的网络请求
+        if (this.networkManager) {
+            this.networkManager.leaveRoom();
+            console.log("[WaitingRoom] 已发送离开房间请求到服务器");
+        } else {
+            console.error("[WaitingRoom] NetworkManager 不存在，无法发送离开房间请求");
+        }
+        
+        // 更新本地状态
         GameStateManager.leaveRoom();
     }
     
