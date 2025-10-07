@@ -9,6 +9,10 @@ import (
 	"time"
 )
 
+const (
+	WinScore = 5 // 胜利分数
+)
+
 // RoomInterface 房间接口，用于Game与Room解耦
 type RoomInterface interface {
 	BroadcastGameState()
@@ -40,10 +44,11 @@ type Game interface {
 
 // Player 玩家结构体
 type Player struct {
-	ID    uint64
-	Name  string
-	Hand  []GameCard
-	Score int
+	ID       uint64
+	Name     string
+	Hand     []GameCard
+	Score    int // 当前局的分数
+	WinCount int // 总胜利次数
 	// 位置信息 - 使用int32配合protobuf的CharacterMoveAction
 	PositionX int32
 	PositionY int32
@@ -87,10 +92,8 @@ func (g *WordCardGame) Start() {
 	g.CurrentTurn = rand.Intn(len(g.Players))
 	g.SkipCount = 0
 
-	// 发牌完成后，广播初始游戏状态
-	if g.Room != nil {
-		g.Room.BroadcastGameState()
-	}
+	// 注意：不在这里广播游戏状态，由Room层统一处理
+	// 避免重复广播导致客户端接收到多次相同消息
 }
 
 // SetRoomRef 设置房间引用
@@ -270,10 +273,10 @@ func (g *WordCardGame) GetState() *pb.GameState {
 }
 
 func (g *WordCardGame) IsGameOver() bool {
-	// 检查是否有玩家达到胜利分数（20分）
+	// 检查是否有玩家达到胜利分数
 	for _, p := range g.Players {
-		if p.Score >= 20 {
-			log.Printf("[Battle] Game over: Player %d has reached 20 points (current score: %d)", p.ID, p.Score)
+		if p.Score >= WinScore {
+			log.Printf("[Battle] Game over: Player %d has reached %d points (current score: %d)", p.ID, WinScore, p.Score)
 			return true
 		}
 	}
@@ -301,6 +304,9 @@ func (g *WordCardGame) IsGameOver() bool {
 
 func (g *WordCardGame) EndGame() {
 	log.Printf("[Battle] Game ending, notifying all players")
+
+	// 确定获胜者并更新胜利次数
+	g.updateWinCount()
 
 	// 发送游戏结束通知
 	if g.Room != nil {
@@ -493,9 +499,9 @@ func (g *WordCardGame) scoreAndReset() {
 			p.Score += score
 			log.Printf("[Battle] Player %d scored %d points, total score: %d", p.ID, score, p.Score)
 
-			// 检查是否达到胜利条件（20分）
-			if p.Score >= 20 {
-				log.Printf("[Battle] Player %d has reached 20 points, game over", p.ID)
+			// 检查是否达到胜利条件
+			if p.Score >= WinScore {
+				log.Printf("[Battle] Player %d has reached %d points, game over", p.ID, WinScore)
 				gameEnded = true
 			}
 		}
@@ -671,7 +677,7 @@ func (g *WordCardGame) BroadcastGameEnd() {
 			Id:           p.ID,
 			Name:         p.Name,
 			CurrentScore: int32(p.Score),
-			// 可以添加胜利次数等其他信息
+			WinCount:     int32(p.WinCount), // 包含胜利次数
 		}
 		gameEndNotification.Players = append(gameEndNotification.Players, playerState)
 	}
@@ -681,5 +687,40 @@ func (g *WordCardGame) BroadcastGameEnd() {
 		roomInterface.BroadcastGameEnd(gameEndNotification)
 	} else {
 		log.Printf("[Battle] Room does not support BroadcastGameEnd method")
+	}
+}
+
+// updateWinCount 更新获胜者的胜利次数
+func (g *WordCardGame) updateWinCount() {
+	// 找到分数最高的玩家或手牌用完的玩家
+	var winner *Player
+	maxScore := -1
+	
+	// 首先检查是否有玩家手牌为空（完成游戏）
+	for _, p := range g.Players {
+		if len(p.Hand) == 0 {
+			winner = p
+			log.Printf("[Battle] Player %d wins by playing all cards (score: %d)", p.ID, p.Score)
+			break
+		}
+	}
+	
+	// 如果没有玩家打完所有牌，则选择分数最高的
+	if winner == nil {
+		for _, p := range g.Players {
+			if p.Score > maxScore {
+				maxScore = p.Score
+				winner = p
+			}
+		}
+		if winner != nil {
+			log.Printf("[Battle] Player %d wins with highest score: %d", winner.ID, winner.Score)
+		}
+	}
+	
+	// 更新获胜者的胜利次数
+	if winner != nil {
+		winner.WinCount++
+		log.Printf("[Battle] Player %d win count updated to: %d", winner.ID, winner.WinCount)
 	}
 }

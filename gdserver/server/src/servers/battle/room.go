@@ -25,6 +25,7 @@ type BattleRoom struct {
 type PlayerInfo struct {
 	PlayerID uint64
 	Name     string
+	WinCount int // 在房间级别保持胜利次数
 	// 添加位置信息用于记录玩家在房间中的当前位置
 	PositionX int32
 	PositionY int32
@@ -107,9 +108,11 @@ func (room *BattleRoom) RemovePlayer(playerID uint64) {
 		if len(room.Players) == 0 {
 			slog.Info("Room is now empty, scheduling room destruction", "room_id", room.BattleID)
 			// 延迟销毁房间，给客户端一些时间处理
+			// 传递房间ID而不是直接调用DestroyRoom，避免锁竞争
+			roomID := room.BattleID
 			go func() {
 				time.Sleep(1 * time.Second)
-				room.DestroyRoom()
+				room.destroyEmptyRoom(roomID)
 			}()
 		}
 	}
@@ -162,12 +165,13 @@ func (room *BattleRoom) StartGame() {
 		slog.Info("Created new game instance", "room_id", room.BattleID)
 	}
 
-	// 将房间玩家转换为游戏玩家
+	// 将房间玩家转换为游戏玩家，保留胜利次数
 	var players []*Player
 	for id, info := range room.Players {
 		players = append(players, &Player{
-			ID:   id,
-			Name: info.Name,
+			ID:       id,
+			Name:     info.Name,
+			WinCount: info.WinCount, // 从房间信息中保留胜利次数
 		})
 	}
 
@@ -222,10 +226,10 @@ func (room *BattleRoom) Run() {
 				// 将游戏逻辑更新的职责交给game
 				if room.Game != nil {
 					if !room.Game.Update() {
-
 						room.EndGame()
 						slog.Info("Game ended", "room_id", room.BattleID)
-						return
+						// 不要return，继续处理后续的房间事件
+						// 游戏结束后房间依然需要处理玩家准备等事件
 					}
 				}
 			}
@@ -398,6 +402,9 @@ func (room *BattleRoom) EndGame() {
 	// 重置游戏实例，为下一局做准备
 	// 注意：不再调用 room.Game.EndGame()，因为在 Run() 方法中已经调用过了
 	if room.Game != nil {
+		// 在重置游戏前，同步胜利次数到房间玩家信息
+		room.syncWinCountFromGame()
+		
 		room.Game.EndGame()
 		room.Game = nil
 	}
@@ -686,7 +693,22 @@ func (room *BattleRoom) NotifyGameEndToPlayer(playerID uint64, gameEndNotificati
 
 // DestroyRoom 删除房间（只有当房间里没有玩家时才调用）
 func (room *BattleRoom) DestroyRoom() {
-	slog.Info("Destroying empty room", "room_id", room.BattleID)
+	room.destroyEmptyRoom(room.BattleID)
+}
+
+// destroyEmptyRoom 内部方法，安全地删除空房间
+func (room *BattleRoom) destroyEmptyRoom(roomID string) {
+	slog.Info("Destroying empty room", "room_id", roomID)
+
+	// 加锁确保线程安全
+	room.PlayersMutex.Lock()
+	defer room.PlayersMutex.Unlock()
+
+	// 再次检查房间是否真的为空（双重检查）
+	if len(room.Players) > 0 {
+		slog.Warn("Room not empty during destruction, aborting", "room_id", roomID, "players_count", len(room.Players))
+		return
+	}
 
 	// 确保游戏已结束
 	if room.Game != nil {
@@ -696,8 +718,36 @@ func (room *BattleRoom) DestroyRoom() {
 
 	// 从服务器移除房间
 	room.Server.RoomsMutex.Lock()
-	delete(room.Server.BattleRooms, room.BattleID)
+	delete(room.Server.BattleRooms, roomID)
 	room.Server.RoomsMutex.Unlock()
 
-	slog.Info("Room destroyed successfully", "room_id", room.BattleID)
+	slog.Info("Room destroyed successfully", "room_id", roomID)
+}
+
+// syncWinCountFromGame 将游戏中的胜利次数同步到房间玩家信息
+func (room *BattleRoom) syncWinCountFromGame() {
+	if room.Game == nil {
+		return
+	}
+	
+	// 使用类型断言获取WordCardGame实例
+	wordCardGame, ok := room.Game.(*WordCardGame)
+	if !ok {
+		slog.Warn("Game is not WordCardGame type", "room_id", room.BattleID)
+		return
+	}
+	
+	room.PlayersMutex.Lock()
+	defer room.PlayersMutex.Unlock()
+	
+	// 同步每个玩家的胜利次数
+	for _, gamePlayer := range wordCardGame.Players {
+		if roomPlayer, exists := room.Players[gamePlayer.ID]; exists {
+			roomPlayer.WinCount = gamePlayer.WinCount
+			slog.Info("Synced win count for player", 
+				"player_id", gamePlayer.ID, 
+				"win_count", gamePlayer.WinCount,
+				"room_id", room.BattleID)
+		}
+	}
 }
