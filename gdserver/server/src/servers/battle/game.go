@@ -273,6 +273,7 @@ func (g *WordCardGame) IsGameOver() bool {
 	// 检查是否有玩家达到胜利分数（20分）
 	for _, p := range g.Players {
 		if p.Score >= 20 {
+			log.Printf("[Battle] Game over: Player %d has reached 20 points (current score: %d)", p.ID, p.Score)
 			return true
 		}
 	}
@@ -280,6 +281,7 @@ func (g *WordCardGame) IsGameOver() bool {
 	// 检查是否有玩家手牌为空
 	for _, p := range g.Players {
 		if len(p.Hand) == 0 {
+			log.Printf("[Battle] Game over: Player %d has no cards left", p.ID)
 			return true
 		}
 	}
@@ -289,6 +291,7 @@ func (g *WordCardGame) IsGameOver() bool {
 	if g.Room != nil && g.Room.IsGameStarted() {
 		// 游戏进行中，如果人数≤1则结束游戏
 		if len(g.Players) <= 1 {
+			log.Printf("[Battle] Game over: Not enough players (current: %d)", len(g.Players))
 			return true
 		}
 	}
@@ -298,12 +301,12 @@ func (g *WordCardGame) IsGameOver() bool {
 
 func (g *WordCardGame) EndGame() {
 	log.Printf("[Battle] Game ending, notifying all players")
-	
+
 	// 发送游戏结束通知
 	if g.Room != nil {
 		g.BroadcastGameEnd()
 	}
-	
+
 	// 游戏结束逻辑，可添加奖励发放等
 	log.Printf("[Battle] Game ended successfully")
 }
@@ -432,15 +435,7 @@ func (g *WordCardGame) CheckTurnTimeout() bool {
 
 // Update 游戏更新方法，处理游戏逻辑更新
 func (g *WordCardGame) Update() bool {
-	// 检查是否有玩家分数超过20分
-	for _, p := range g.Players {
-		if p.Score >= 20 {
-			log.Printf("[Battle] Player %d has reached 20 points, game over", p.ID)
-			return false // 游戏结束
-		}
-	}
-
-	// 检查游戏是否结束（手牌为空）
+	// 统一使用 IsGameOver() 检查所有游戏结束条件
 	if g.IsGameOver() {
 		return false // 游戏结束
 	}

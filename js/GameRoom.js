@@ -343,6 +343,13 @@ class GameRoom {
     }
     
     onGameEnd(data) {
+        // 防止重复处理游戏结束
+        if (this._gameEndProcessed) {
+            console.log("[GameRoom] 游戏结束已处理，忽略重复调用");
+            return;
+        }
+        this._gameEndProcessed = true;
+        
         // 服务器广播的游戏结束事件
         console.log("[GameRoom] 收到 game_end_notification (游戏结束):", data);
         
@@ -402,6 +409,7 @@ class GameRoom {
         this.hasPlayedCard = false;
         this.skipTurnClicked = false;
         this.lastCurrentTurn = -1;
+        this._gameEndProcessed = false; // 重置游戏结束处理标记
         
         // 清除定时器
         if (this.turnTimer) {
