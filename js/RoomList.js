@@ -66,74 +66,57 @@ class RoomList {
     }
     
     bindEvents() {
-        // 鼠标移动事件
-        this.canvas.addEventListener('mousemove', (e) => {
-            if (!this.isVisible) return;
+        // 微信小游戏环境中使用wx API处理事件
+        if (typeof wx !== 'undefined') {
+            // 使用wx.onTouchStart处理点击和触摸事件
+            wx.onTouchStart((res) => {
+                if (!this.isVisible) return;
+                
+                if (res.touches && res.touches.length > 0) {
+                    const touch = res.touches[0];
+                    // 创建模拟事件对象
+                    const simulatedEvent = {
+                        clientX: touch.clientX,
+                        clientY: touch.clientY,
+                        preventDefault: () => {},
+                        touches: res.touches
+                    };
+                    this.handleClick(simulatedEvent);
+                }
+            });
             
-            const rect = this.canvas.getBoundingClientRect();
-            const mouseX = e.clientX - rect.left;
-            const mouseY = e.clientY - rect.top;
-            
-            this.updateHoverState(mouseX, mouseY);
-            this.render();
-        });
+            // 使用wx.onTouchMove处理鼠标移动事件
+            wx.onTouchMove((res) => {
+                if (!this.isVisible) return;
+                
+                if (res.touches && res.touches.length > 0) {
+                    const touch = res.touches[0];
+                    // 创建模拟事件对象
+                    const simulatedEvent = {
+                        clientX: touch.clientX,
+                        clientY: touch.clientY,
+                        preventDefault: () => {},
+                        touches: res.touches
+                    };
+                    this.onMouseMove(simulatedEvent);
+                }
+            });
+        }
+    }
+    
+    onMouseMove(event) {
+        // 微信小游戏环境中不支持getBoundingClientRect，使用其他方式获取坐标
+        let x, y;
+        if (typeof wx !== 'undefined') {
+            // 在微信小游戏环境中，我们假设事件对象已经包含了相对于canvas的坐标
+            x = event.clientX || 0;
+            y = event.clientY || 0;
+        } else {
+            return; // 无法获取坐标，直接返回
+        }
         
-        // 鼠标点击事件
-        this.canvas.addEventListener('click', (e) => {
-            if (!this.isVisible) return;
-            
-            const rect = this.canvas.getBoundingClientRect();
-            const mouseX = e.clientX - rect.left;
-            const mouseY = e.clientY - rect.top;
-            
-            this.handleClick(mouseX, mouseY);
-        });
-        
-        // 滚轮事件
-        this.canvas.addEventListener('wheel', (e) => {
-            if (!this.isVisible) return;
-            
-            e.preventDefault();
-            
-            const scrollDelta = e.deltaY > 0 ? 20 : -20;
-            this.scrollOffset = Math.max(0, Math.min(this.maxScroll, this.scrollOffset + scrollDelta));
-            
-            this.render();
-        });
-        
-        // 触摸事件
-        let touchStartY = 0;
-        
-        this.canvas.addEventListener('touchstart', (e) => {
-            if (!this.isVisible) return;
-            
-            e.preventDefault();
-            touchStartY = e.touches[0].clientY;
-        });
-        
-        this.canvas.addEventListener('touchmove', (e) => {
-            if (!this.isVisible) return;
-            
-            e.preventDefault();
-            const touchY = e.touches[0].clientY;
-            const deltaY = touchStartY - touchY;
-            
-            this.scrollOffset = Math.max(0, Math.min(this.maxScroll, this.scrollOffset + deltaY));
-            touchStartY = touchY;
-            
-            this.render();
-        });
-        
-        this.canvas.addEventListener('touchend', (e) => {
-            if (!this.isVisible) return;
-            
-            const touch = e.changedTouches[0];
-            const rect = this.canvas.getBoundingClientRect();
-            const touchX = touch.clientX - rect.left;
-            const touchY = touch.clientY - rect.top;
-            
-            this.handleClick(touchX, touchY);
-        });
+        this.updateHoverState(x, y);
+        this.render();
     }
     
     updateHoverState(mouseX, mouseY) {
@@ -178,35 +161,52 @@ class RoomList {
         }
     }
     
-    handleClick(mouseX, mouseY) {
-        // 检查返回按钮
-        const backButtonArea = this.getBackButtonArea();
-        if (this.isPointInArea(mouseX, mouseY, backButtonArea)) {
-            this.onBackClick();
+    handleClick(event) {
+        // 微信小游戏环境中不支持getBoundingClientRect，使用其他方式获取坐标
+        let x, y;
+        if (typeof wx !== 'undefined') {
+            // 在微信小游戏环境中，我们假设事件对象已经包含了相对于canvas的坐标
+            x = event.clientX || event.touches?.[0]?.clientX || 0;
+            y = event.clientY || event.touches?.[0]?.clientY || 0;
+        } else {
+            return; // 无法获取坐标，直接返回
+        }
+        
+        // 检查是否点击了返回按钮
+        if (this.backButton && 
+            x >= this.backButton.x && x <= this.backButton.x + this.backButton.width &&
+            y >= this.backButton.y && y <= this.backButton.y + this.backButton.height) {
+            this.onBack();
             return;
         }
         
-        // 检查房间项的加入按钮
-        const roomListY = this.config.headerHeight;
+        // 检查是否点击了刷新按钮
+        if (this.refreshButton && 
+            x >= this.refreshButton.x && x <= this.refreshButton.x + this.refreshButton.width &&
+            y >= this.refreshButton.y && y <= this.refreshButton.y + this.refreshButton.height) {
+            this.onRefresh();
+            return;
+        }
         
-        for (let i = 0; i < this.rooms.length; i++) {
-            const roomY = roomListY + (i * (this.config.roomItemHeight + this.config.roomItemSpacing)) - this.scrollOffset;
+        // 检查是否点击了创建房间按钮
+        if (this.createRoomButton && 
+            x >= this.createRoomButton.x && x <= this.createRoomButton.x + this.createRoomButton.width &&
+            y >= this.createRoomButton.y && y <= this.createRoomButton.y + this.createRoomButton.height) {
+            this.onCreateRoom();
+            return;
+        }
+        
+        // 检查是否点击了某个房间
+        if (this.rooms && this.rooms.length > 0) {
+            const roomHeight = 60;
+            const startY = 150;
             
-            if (roomY > this.canvas.height || roomY + this.config.roomItemHeight < roomListY) {
-                continue;
-            }
-            
-            const roomArea = {
-                x: this.config.padding,
-                y: roomY,
-                width: this.canvas.width - 2 * this.config.padding,
-                height: this.config.roomItemHeight
-            };
-            
-            const joinButtonArea = this.getJoinButtonArea(roomArea);
-            if (this.isPointInArea(mouseX, mouseY, joinButtonArea)) {
-                this.onJoinRoomClick(this.rooms[i]);
-                break;
+            for (let i = 0; i < this.rooms.length; i++) {
+                const roomY = startY + i * (roomHeight + 10);
+                if (y >= roomY && y <= roomY + roomHeight) {
+                    this.onJoinRoom(this.rooms[i]);
+                    return;
+                }
             }
         }
     }

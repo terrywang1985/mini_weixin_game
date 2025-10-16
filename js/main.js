@@ -11,33 +11,46 @@ import RoomManager from './RoomManager.js';
 export default class Main {
   constructor() {
     console.log("=== 微信小游戏启动 ===");
-    
+    // 屏幕调试日志开关（true=显示，false=关闭）
+    this.enableDebugLogOnScreen = false;
+
+    // 微信真机调试时自动开启详细 JS 日志（建议真机排查问题时开启）
+    if (typeof wx !== 'undefined' && wx.setEnableDebug) {
+      wx.setEnableDebug({ enableDebug: false});
+      // 注：如需关闭可改为 false
+    }
+
     // 在微信小游戏环境中获取canvas
     this.canvas = this.getCanvas();
     this.ctx = this.canvas.getContext('2d');
-    
+
     // 设置canvas尺寸
     this.setupCanvas();
-    
+
     // 初始化网络管理器
     this.networkManager = new NetworkManager();
-    
+
+    // 绑定调试日志画布（如开启）
+    if (this.enableDebugLogOnScreen) {
+      this.networkManager.bindDebugCanvas(this.canvas);
+    }
+
     // 初始化UI页面
     this.mainMenu = new MainMenu(this.canvas, this.networkManager);
     this.roomList = new RoomList(this.canvas, this.networkManager);
     this.roomManager = new RoomManager(this.canvas, this.networkManager);
-    
+
     // 当前活动页面
     this.currentPage = null;
-    
+
     // 加载状态
     this.isLoading = true;
     this.loadingMessage = "正在连接服务器...";
-    
+
     // 防止错误日志刷屏的防抖机制
     this.lastErrorLogTime = 0;
     this.errorLogInterval = 5000; // 5秒内最多输出一次错误日志
-    
+
     this.init();
     this.bindEvents();
     this.startGameLoop();
@@ -89,9 +102,13 @@ export default class Main {
     } else {
       // 浏览器环境，创建canvas元素
       console.log("浏览器环境，创建canvas元素");
-      const canvasElement = document.createElement('canvas');
-      document.body.appendChild(canvasElement);
-      return canvasElement;
+      // 在微信小游戏中不支持document API，这里仅用于测试
+      if (typeof document !== 'undefined') {
+        const canvasElement = document.createElement('canvas');
+        document.body.appendChild(canvasElement);
+        return canvasElement;
+      }
+      return null;
     }
   }
   
@@ -114,7 +131,7 @@ export default class Main {
         this.canvas.height = 667;
       }
     } else {
-      // 其他环境，设置默认尺寸
+      // 浏览器环境，设置默认尺寸
       this.canvas.width = 375;
       this.canvas.height = 667;
     }
@@ -230,10 +247,15 @@ export default class Main {
       
       // 不再显示房间创建成功的对话框，直接进入房间
       console.log("房间已创建，ID:", room.id);
+      
+      // 更新游戏状态到房间等待状态
+      GameStateManager.setGameState(GameStateManager.GAME_STATES.IN_ROOM);
     });
     
     this.networkManager.on('room_joined', () => {
       console.log("加入房间成功");
+      // 更新游戏状态到房间等待状态
+      GameStateManager.setGameState(GameStateManager.GAME_STATES.IN_ROOM);
     });
     
     this.networkManager.on('room_list_received', (rooms) => {
@@ -242,7 +264,7 @@ export default class Main {
   }
   
   onGameStateChange(oldState, newState) {
-    console.log(`游戏状态变化: ${oldState} -> ${newState}`);
+    console.log(`状态切换: ${oldState} -> ${newState}`);
     
     // 隐藏所有页面
     this.mainMenu.hide();
@@ -268,12 +290,15 @@ export default class Main {
         this.roomList.show();
         break;
       case GameStateManager.GAME_STATES.IN_ROOM:
+        console.log("切换到房间内，RoomManager接管渲染");
         this.isLoading = false;
+        this.currentPage = null;  // 让RoomManager接管
         // RoomManager 会自动显示 WaitingRoom
         break;
       case GameStateManager.GAME_STATES.IN_GAME:
         // 游戏开始后继续显示游戏房间页面（显示游戏界面）
         this.isLoading = false;
+        this.currentPage = null;  // 让RoomManager接管
         // RoomManager 会自动显示 GameRoom
         break;
       case GameStateManager.GAME_STATES.LOADING:
@@ -281,7 +306,7 @@ export default class Main {
         this.isLoading = true;
         break;
       default:
-        console.warn('状态切换到未知或未处理状态, 将显示错误屏:', newState);
+        console.warn('状态切换到未知状态:', newState);
         this.currentPage = null;
         break;
     }
@@ -291,211 +316,93 @@ export default class Main {
     // 处理画布尺寸变化
     this.updateCanvasSize();
     
-    // 监听窗口尺寸变化（如果需要）
-    if (typeof window !== 'undefined') {
-      window.addEventListener('resize', () => {
+    // 微信小游戏环境中使用wx.onWindowResize
+    if (typeof wx !== 'undefined' && wx.onWindowResize) {
+      wx.onWindowResize(() => {
         this.updateCanvasSize();
       });
     }
     
-    // 处理错误
-    window.addEventListener('error', (event) => {
-      console.error("全局错误:", event.error);
-    });
-    
-    // 处理未捕获的Promise错误
-    window.addEventListener('unhandledrejection', (event) => {
-      console.error("未处理的Promise错误:", event.reason);
-    });
-    
-    // 将当前实例保存到全局变量，供其他组件访问
-    if (typeof window !== 'undefined') {
-      window.mainInstance = this;
+    // 处理错误 - 微信小游戏环境中使用wx.onError
+    if (typeof wx !== 'undefined' && wx.onError) {
+      wx.onError((error) => {
+        console.error("全局错误:", error);
+      });
     }
+    
+    // 处理未捕获的Promise错误 - 微信小游戏环境中使用wx.onUnhandledRejection
+    if (typeof wx !== 'undefined' && wx.onUnhandledRejection) {
+      wx.onUnhandledRejection((event) => {
+        console.error("未处理的Promise错误:", event.reason);
+      });
+    }
+    
+    // 添加canvas点击事件处理 - 适配微信小游戏环境
+    this.setupCanvasClickHandler();
   }
   
+  // 更新画布尺寸 - 适配微信小游戏环境
   updateCanvasSize() {
-    let screenWidth = 375;
-    let screenHeight = 667;
+    // 重新设置canvas尺寸
+    this.setupCanvas();
     
-    if (typeof wx !== 'undefined') {
-      // 微信小游戏环境
-      try {
-        const systemInfo = wx.getSystemInfoSync();
-        screenWidth = systemInfo.windowWidth || 375;
-        screenHeight = systemInfo.windowHeight || 667;
-      } catch (error) {
-        console.error("获取微信系统信息失败:", error);
-      }
-    } else if (typeof window !== 'undefined') {
-      // 浏览器环境
-      screenWidth = window.innerWidth || 375;
-      screenHeight = window.innerHeight || 667;
+    // 通知所有页面更新尺寸
+    if (this.mainMenu) {
+      this.mainMenu.updateCanvasSize();
+    }
+    if (this.roomList) {
+      this.roomList.updateCanvasSize();
+    }
+    if (this.roomManager) {
+      this.roomManager.updateCanvasSize();
     }
     
-    // 设置canvas尺寸
-    this.canvas.width = screenWidth;
-    this.canvas.height = screenHeight;
-    
-    // 验证设置结果
-    if (this.canvas.width <= 1 || this.canvas.height <= 1) {
-      this.canvas.width = 375;
-      this.canvas.height = 667;
-    }
-    
-    // 更新所有页面的画布尺寸
-    if (this.mainMenu) this.mainMenu.updateCanvasSize();
-    if (this.roomList) this.roomList.updateCanvasSize();
-    if (this.roomManager) this.roomManager.updateCanvasSize();
-  }
-  
-  startGameLoop() {
-    const gameLoop = () => {
-      this.update();
-      this.render();
-      requestAnimationFrame(gameLoop);
-    };
-    
-    requestAnimationFrame(gameLoop);
-    console.log("游戏循环已启动");
-  }
-  
-  update() {
-    // 这里可以添加全局更新逻辑
-    // 例如：网络状态检查、心跳包等
-  }
-  
-  render() {
-    if (this.isLoading) {
-      this.renderLoadingScreen();
-      return;
-    }
-
-    if (!this.currentPage) {
-      // 容错：如果已经在某个状态，却没有设置 currentPage，尝试恢复
-      if (GameStateManager.currentState === GameStateManager.GAME_STATES.IN_GAME) {
-        console.warn('[Recover] IN_GAME 状态下 currentPage 丢失，RoomManager 会自动处理');
-      } else if (GameStateManager.currentState === GameStateManager.GAME_STATES.IN_ROOM) {
-        console.warn('[Recover] IN_ROOM 状态下 currentPage 丢失，RoomManager 会自动处理');
-      } else if (GameStateManager.currentState === GameStateManager.GAME_STATES.MAIN_MENU) {
-        console.warn('[Recover] MAIN_MENU 状态下 currentPage 丢失，尝试自动恢复 mainMenu');
-        this.currentPage = this.mainMenu;
-        this.mainMenu.show();
-      } else if (GameStateManager.currentState === GameStateManager.GAME_STATES.ROOM_LIST) {
-        console.warn('[Recover] ROOM_LIST 状态下 currentPage 丢失，尝试自动恢复 roomList');
-        this.currentPage = this.roomList;
-        this.roomList.show();
-      }
-    }
-
-    if (this.currentPage) {
+    // 重新渲染当前页面
+    if (this.currentPage && typeof this.currentPage.render === 'function') {
       this.currentPage.render();
-    } else {
-      // 防止错误日志刷屏：最多5秒输出一次
-      const now = Date.now();
-      if (now - this.lastErrorLogTime > this.errorLogInterval) {
-        console.warn('进入错误屏: currentPage仍为空, isLoading=', this.isLoading, ' state=', GameStateManager.currentState);
-        this.lastErrorLogTime = now;
-      }
-      this.renderErrorScreen();
     }
   }
   
-  renderLoadingScreen() {
-    const centerX = this.canvas.width / 2;
-    const centerY = this.canvas.height / 2;
-    
-    // 绘制加载背景
-    this.ctx.fillStyle = '#2c3e50';
-    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-    
-    // 绘制加载标题
-    this.ctx.fillStyle = '#ffffff';
-    this.ctx.font = 'bold 28px Arial';
-    this.ctx.textAlign = 'center';
-    this.ctx.textBaseline = 'middle';
-    this.ctx.fillText('连词成句', centerX, centerY - 60);
-    
-    // 绘制加载消息
-    this.ctx.font = '16px Arial';
-    this.ctx.fillStyle = '#bdc3c7';
-    this.ctx.fillText(this.loadingMessage, centerX, centerY);
-    
-    // 绘制简单的加载动画
-    const time = Date.now() / 1000;
-    const dots = Math.floor(time * 2) % 4;
-    const dotString = '.'.repeat(dots);
-    this.ctx.fillText(dotString, centerX, centerY + 30);
-    
-    // 绘制版本信息
-    this.ctx.font = '12px Arial';
-    this.ctx.fillStyle = '#7f8c8d';
-    this.ctx.fillText('版本 1.0.0', centerX, this.canvas.height - 30);
+  // 设置canvas点击事件处理 - 适配微信小游戏环境
+  setupCanvasClickHandler() {
+    if (typeof wx !== 'undefined') {
+      // 微信小游戏环境使用wx.onTouchStart处理点击
+      wx.onTouchStart((res) => {
+        if (res.touches && res.touches.length > 0) {
+          const touch = res.touches[0];
+          // 处理重试按钮点击
+          if (this.needsRetryButtonHandling) {
+            this.handleRetryButtonClick(touch.clientX, touch.clientY);
+            this.needsRetryButtonHandling = false; // 重置标志
+          }
+        }
+      });
+    }
   }
   
-  renderErrorScreen() {
-    const centerX = this.canvas.width / 2;
-    const centerY = this.canvas.height / 2;
-    
-    // 绘制错误背景
-    this.ctx.fillStyle = '#34495e';
-    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-    
-    // 绘制错误信息
-    this.ctx.fillStyle = '#ffffff';
-    this.ctx.font = 'bold 24px Arial';
-    this.ctx.textAlign = 'center';
-    this.ctx.textBaseline = 'middle';
-    this.ctx.fillText('无法连接到服务器', centerX, centerY - 50);
-    
-    this.ctx.font = '16px Arial';
-    this.ctx.fillText('请检查网络连接或服务器状态', centerX, centerY - 10);
-    
-    // 重试按钮
-    const buttonWidth = 150;
-    const buttonHeight = 50;
-    const buttonX = centerX - buttonWidth / 2;
-    const buttonY = centerY + 30;
-    
-    // 绘制按钮背景
-    this.ctx.fillStyle = '#3498db';
-    this.ctx.fillRect(buttonX, buttonY, buttonWidth, buttonHeight);
-    
-    // 绘制按钮边框
-    this.ctx.strokeStyle = '#2980b9';
-    this.ctx.lineWidth = 2;
-    this.ctx.strokeRect(buttonX, buttonY, buttonWidth, buttonHeight);
-    
-    // 绘制按钮文字
-    this.ctx.fillStyle = '#ffffff';
-    this.ctx.font = '18px Arial';
-    this.ctx.fillText('点击重连', centerX, buttonY + buttonHeight / 2);
-    
-    // 添加点击事件监听
-    this.setupRetryButton(buttonX, buttonY, buttonWidth, buttonHeight);
-  }
-  
+  // 重写setupRetryButton方法，适配微信小游戏环境
   setupRetryButton(x, y, width, height) {
-    // 移除之前的事件监听器（如果有的话）
-    if (this.retryButtonHandler) {
-      this.canvas.removeEventListener('click', this.retryButtonHandler);
-    }
+    // 在微信小游戏中，我们使用wx API处理点击事件
     
-    // 创建新的事件监听器
-    this.retryButtonHandler = (event) => {
-      const rect = this.canvas.getBoundingClientRect();
-      const mouseX = event.clientX - rect.left;
-      const mouseY = event.clientY - rect.top;
-      
+    // 保存按钮坐标信息，供点击处理中使用
+    this.retryButtonArea = { x, y, width, height };
+    
+    // 设置一个标志，表示需要处理重试按钮点击
+    this.needsRetryButtonHandling = true;
+  }
+  
+  // 处理重试按钮点击事件
+  handleRetryButtonClick(mouseX, mouseY) {
+    if (this.retryButtonArea) {
+      const { x, y, width, height } = this.retryButtonArea;
       // 检查点击是否在按钮区域内
       if (mouseX >= x && mouseX <= x + width && mouseY >= y && mouseY <= y + height) {
         // 点击了重试按钮，执行重连逻辑
         this.reconnect();
+        return true; // 表示已处理点击事件
       }
-    };
-    
-    // 添加事件监听器
-    this.canvas.addEventListener('click', this.retryButtonHandler);
+    }
+    return false; // 表示未处理点击事件
   }
   
   showReconnectDialog() {
@@ -510,11 +417,16 @@ export default class Main {
           }
         }
       });
-    } else {
+    } else if (typeof confirm !== 'undefined') {
+      // 浏览器环境
       const reconnect = confirm('与服务器的连接已断开，是否重新连接？');
       if (reconnect) {
         this.reconnect();
       }
+    } else {
+      // 其他环境，直接重连
+      console.log("连接断开，尝试重新连接...");
+      this.reconnect();
     }
   }
   
@@ -526,7 +438,10 @@ export default class Main {
     
     // 移除之前的重试按钮事件监听器
     if (this.retryButtonHandler) {
-      this.canvas.removeEventListener('click', this.retryButtonHandler);
+      // 在微信小游戏中不支持removeEventListener，事件监听器会在页面销毁时自动移除
+      if (typeof wx !== 'undefined') {
+        console.log("微信小游戏环境中事件监听器将在页面销毁时自动移除");
+      }
       this.retryButtonHandler = null;
     }
     
@@ -556,5 +471,89 @@ export default class Main {
     console.log(this.getDebugInfo());
     GameStateManager.printDebugInfo();
     console.log("==================");
+  }
+  
+  // 开始游戏循环
+  startGameLoop() {
+    const gameLoop = () => {
+      this.render();
+      requestAnimationFrame(gameLoop);
+    };
+    
+    // 优先使用requestAnimationFrame，如果不可用再用setTimeout
+    if (typeof requestAnimationFrame !== 'undefined') {
+      // 浏览器环境或支持requestAnimationFrame的环境
+      gameLoop();
+      console.log("游戏循环已启动");
+    } else {
+      // 不支持requestAnimationFrame的环境，使用setTimeout
+      const loop = () => {
+        this.render();
+        setTimeout(loop, 1000 / 60); // 约60FPS
+      };
+      loop();
+      console.log("游戏循环已启动 (setTimeout)");
+    }
+  }
+  
+  // 渲染游戏画面
+  render() {
+    if (!this.canvas || !this.ctx) return;
+
+    // 清空画布
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+    // 绘制加载画面或当前页面
+    if (this.isLoading) {
+      this.drawLoadingScreen();
+    } else if (this.currentPage && typeof this.currentPage.render === 'function') {
+      this.currentPage.render();
+    } else {
+      // ...existing code...
+      const currentState = GameStateManager.getCurrentState();
+      if (currentState === GameStateManager.GAME_STATES.IN_ROOM || 
+          currentState === GameStateManager.GAME_STATES.IN_GAME) {
+        if (this.roomManager && this.roomManager.currentRoom && 
+            typeof this.roomManager.currentRoom.render === 'function') {
+          this.roomManager.currentRoom.render();
+        } else {
+          this.ctx.fillStyle = '#2c3e50';
+          this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+          this.ctx.fillStyle = '#ffffff';
+          this.ctx.font = '20px Arial';
+          this.ctx.textAlign = 'center';
+          this.ctx.textBaseline = 'middle';
+          this.ctx.fillText('正在进入房间...', this.canvas.width / 2, this.canvas.height / 2);
+        }
+      } else {
+        this.ctx.fillStyle = '#2c3e50';
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+      }
+    }
+
+    // 屏幕调试日志渲染（如开启）
+    if (this.enableDebugLogOnScreen) {
+      this.networkManager.drawDebugLog();
+    }
+  }
+  
+  // 绘制加载画面
+  drawLoadingScreen() {
+    if (!this.ctx) return;
+    
+    // 绘制背景
+    this.ctx.fillStyle = '#000000';
+    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    
+    // 绘制加载文字
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.font = '20px Arial';
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'middle';
+    
+    const centerX = this.canvas.width / 2;
+    const centerY = this.canvas.height / 2;
+    
+    this.ctx.fillText(this.loadingMessage, centerX, centerY);
   }
 }

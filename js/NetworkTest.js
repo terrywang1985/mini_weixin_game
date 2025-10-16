@@ -103,9 +103,7 @@ if (typeof wx !== 'undefined') {
     wx.onShow(() => {
         setTimeout(runAllTests, 500);
     });
-} else {
-    // 浏览器环境
-    document.addEventListener('DOMContentLoaded', runAllTests);
+
 }
 
 export { runAllTests };

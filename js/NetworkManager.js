@@ -9,6 +9,11 @@ import ErrorMessageHandler from './ErrorMessageHandler.js';
 
 class NetworkManager {
     constructor() {
+        // ===== 用户身份管理配置 =====
+        // 发布模式：设为 true，用户每次登录保持同一账号
+        // 测试模式：设为 false，每次登录都是新账号（便于测试）
+        this.USE_PERSISTENT_IDENTITY = false; // 改为 true 启用固定用户身份
+        
         this.websocket = null;
         this.isConnected = false;
         this.clientId = "";
@@ -17,7 +22,7 @@ class NetworkManager {
         this.gatewayUrl = "";
         
         // 服务器配置
-        this.loginUrl = "http://localhost:8081/login";
+        this.loginUrl = "https://3qk7.com/login";
         this.websocketUrl = "";
         
         // 用户信息
@@ -60,14 +65,22 @@ class NetworkManager {
     async guestLogin(testSuffix = "") {
         console.log("开始HTTP游客登录...");
         
-        // 生成唯一的设备ID，确保多窗口不冲突
-        const baseDeviceId = "wxgame_" + this.generateDeviceId();
-        const windowInstance = Math.floor(Math.random() * 100000); // 窗口实例标识
-        const deviceId = testSuffix 
-            ? `${baseDeviceId}_test_${testSuffix}_${windowInstance}` 
-            : `${baseDeviceId}_${windowInstance}`;
+        let deviceId;
+        
+        if (this.USE_PERSISTENT_IDENTITY) {
+            // 发布模式：使用持久化设备ID
+            deviceId = this.getOrCreatePersistentDeviceId();
+        } else {
+            // 测试模式：使用临时设备ID（每次都是新号）
+            const baseDeviceId = "wxgame_" + this.generateDeviceId();
+            const windowInstance = Math.floor(Math.random() * 100000);
+            deviceId = testSuffix 
+                ? `${baseDeviceId}_test_${testSuffix}_${windowInstance}` 
+                : `${baseDeviceId}_${windowInstance}`;
+        }
         
         console.log("生成的设备ID:", deviceId);
+        console.log("当前使用模式:", this.USE_PERSISTENT_IDENTITY ? "发布模式（固定用户身份）" : "测试模式（每次新号）");
         
         const loginData = {
             device_id: deviceId,
@@ -76,7 +89,7 @@ class NetworkManager {
         };
         
         try {
-            const response = await this.httpRequest(this.loginUrl, {
+            const response = await this.request(this.loginUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -192,26 +205,31 @@ class NetworkManager {
                 } else {
                     console.log("使用浏览器WebSocket API");
                     // 浏览器环境
-                    this.websocket = new WebSocket(this.websocketUrl);
-                    this.websocket.binaryType = 'arraybuffer';
-                    
-                    this.websocket.onopen = (event) => {
-                        this.onWebSocketOpen(event);
-                        resolve(true);
-                    };
-                    
-                    this.websocket.onmessage = (event) => {
-                        this.onWebSocketMessage(event);
-                    };
-                    
-                    this.websocket.onclose = (event) => {
-                        this.onWebSocketClose(event);
-                    };
-                    
-                    this.websocket.onerror = (event) => {
-                        this.onWebSocketError(event);
-                        reject(new Error("WebSocket连接失败"));
-                    };
+                    // 在微信小游戏中不支持浏览器WebSocket API，这里仅用于测试
+                    if (typeof WebSocket !== 'undefined') {
+                        this.websocket = new WebSocket(this.websocketUrl);
+                        this.websocket.binaryType = 'arraybuffer';
+                        
+                        this.websocket.onopen = (event) => {
+                            this.onWebSocketOpen(event);
+                            resolve(true);
+                        };
+                        
+                        this.websocket.onmessage = (event) => {
+                            this.onWebSocketMessage(event);
+                        };
+                        
+                        this.websocket.onclose = (event) => {
+                            this.onWebSocketClose(event);
+                        };
+                        
+                        this.websocket.onerror = (event) => {
+                            this.onWebSocketError(event);
+                            reject(new Error("WebSocket连接失败"));
+                        };
+                    } else {
+                        reject(new Error("WebSocket API不可用"));
+                    }
                 }
                 
             } catch (error) {
@@ -224,15 +242,10 @@ class NetworkManager {
     // WebSocket事件处理
     async onWebSocketOpen(event) {
         this.isConnected = true;
-        console.log("WebSocket连接成功");
-        
-        // 更新网络状态
-        GameStateManager.updateNetworkStatus({
-            isConnected: true
-        });
-        
+        this.debugLog('WebSocket连接成功');
+        GameStateManager.updateNetworkStatus({ isConnected: true });
         this.emit('connected');
-        
+        this.debugLog('准备开始认证流程');
         // 连接成功后立即进行认证
         await this.websocketAuth();
     }
@@ -380,31 +393,31 @@ class NetworkManager {
     // WebSocket认证
     async websocketAuth() {
         if (!this.sessionToken) {
-            console.error("没有有效的session_token，无法进行认证");
+            this.debugLog("没有有效的session_token，无法进行认证");
             return;
         }
-        
-        console.log("初始化Protobuf管理器...");
-        
-        // 初始化protobuf管理器
+        this.debugLog("初始化Protobuf管理器...");
         try {
             await this.protobuf.initialize();
-            console.log("Protobuf管理器初始化成功");
+            this.debugLog("Protobuf管理器初始化成功");
         } catch (error) {
-            console.error("Protobuf管理器初始化失败:", error);
+            this.debugLog("Protobuf管理器初始化失败:" + error);
             return;
         }
-        
-        console.log("发送WebSocket认证请求...");
-        
-        const deviceId = "wxgame_" + this.generateDeviceId();
+        this.debugLog("发送WebSocket认证请求...");
+        let deviceId;
+        if (this.USE_PERSISTENT_IDENTITY) {
+            deviceId = this.getOrCreatePersistentDeviceId();
+        } else {
+            deviceId = "wxgame_" + this.generateDeviceId();
+        }
         const finalPacket = this.protobuf.createAuthRequest(this.sessionToken, deviceId);
-        
+        this.debugLog('认证包长度: ' + (finalPacket && finalPacket.length));
         if (this.isWebSocketConnected()) {
             this.sendWebSocketMessage(finalPacket);
-            console.log("认证请求已发送");
+            this.debugLog("认证请求已发送");
         } else {
-            console.error("WebSocket未连接，无法发送认证请求");
+            this.debugLog("WebSocket未连接，无法发送认证请求");
         }
     }
     
@@ -546,18 +559,31 @@ class NetworkManager {
     
     // 发送WebSocket消息的通用方法
     sendWebSocketMessage(data) {
+        this.debugLog('sendWebSocketMessage: ' + (data && data.length ? 'length=' + data.length : typeof data));
         if (this.isWebSocketConnected()) {
             if (typeof wx !== 'undefined') {
-                // 微信小游戏环境
+                // 微信小游戏环境，确保数据类型正确
+                let sendData;
+                if (data instanceof ArrayBuffer) {
+                    // ArrayBuffer 转换为 Uint8Array
+                    sendData = new Uint8Array(data);
+                } else if (data instanceof Uint8Array) {
+                    sendData = data;
+                } else {
+                    this.debugLog('警告：未知数据类型 ' + typeof data);
+                    sendData = data;
+                }
+                
                 this.websocket.send({
-                    data: data
+                    data: sendData.buffer || sendData
                 });
+                this.debugLog('微信小游戏 send 完成，数据类型: ' + (sendData.constructor.name));
             } else {
-                // 浏览器环境
                 this.websocket.send(data);
+                this.debugLog('浏览器 send 完成');
             }
         } else {
-            console.error("WebSocket未连接，无法发送消息");
+            this.debugLog('WebSocket未连接，无法发送消息');
         }
     }
     
@@ -592,17 +618,113 @@ class NetworkManager {
         return `${timestamp}_${random1}_${random2}_${windowId}_${perfTime}`;
     }
     
-    // HTTP请求封装（微信小游戏环境）
-    httpRequest(url, options) {
-        return new Promise((resolve, reject) => {
-            if (typeof wx !== 'undefined' && wx.request) {
+    // 获取或创建持久化设备ID（发布版本用）
+    getOrCreatePersistentDeviceId() {
+        const STORAGE_KEY = 'persistent_device_id';
+        
+        try {
+            // 尝试从本地存储获取现有的设备ID
+            let deviceId = null;
+            
+            if (typeof wx !== 'undefined' && wx.getStorageSync) {
                 // 微信小游戏环境
+                deviceId = wx.getStorageSync(STORAGE_KEY);
+            } else if (typeof localStorage !== 'undefined') {
+                // 浏览器环境（开发测试用）
+                deviceId = localStorage.getItem(STORAGE_KEY);
+            }
+            
+            if (deviceId) {
+                console.log("使用已保存的设备ID:", deviceId);
+                console.log("当前使用模式: 发布模式（固定用户身份）");
+                return deviceId;
+            }
+            
+            // 如果没有保存的ID，创建一个新的持久化ID
+            deviceId = this.createPersistentDeviceId();
+            
+            // 保存到本地存储
+            if (typeof wx !== 'undefined' && wx.setStorageSync) {
+                // 微信小游戏环境
+                wx.setStorageSync(STORAGE_KEY, deviceId);
+            } else if (typeof localStorage !== 'undefined') {
+                // 浏览器环境（开发测试用）
+                localStorage.setItem(STORAGE_KEY, deviceId);
+            }
+            
+            console.log("创建并保存新的设备ID:", deviceId);
+            console.log("当前使用模式: 发布模式（固定用户身份）");
+            return deviceId;
+            
+        } catch (error) {
+            console.error("持久化设备ID处理失败，使用临时ID:", error);
+            // 如果存储失败，回退到临时ID
+            return "wxgame_" + this.generateDeviceId();
+        }
+    }
+    
+    // 创建持久化设备ID
+    createPersistentDeviceId() {
+        // 尝试获取微信小游戏的用户标识
+        if (typeof wx !== 'undefined') {
+            try {
+                // 使用微信小游戏的系统信息作为设备特征
+                const systemInfo = wx.getSystemInfoSync();
+                const deviceFeature = [
+                    systemInfo.brand || '',
+                    systemInfo.model || '',
+                    systemInfo.system || '',
+                    systemInfo.platform || ''
+                ].join('_').replace(/[^a-zA-Z0-9_]/g, '');
+                
+                // 结合时间戳和随机数创建稳定的ID
+                const timestamp = Math.floor(Date.now() / 1000); // 秒级时间戳
+                const random = Math.random().toString(36).substr(2, 8);
+                
+                return `wxgame_${deviceFeature}_${timestamp}_${random}`;
+            } catch (error) {
+                console.warn("获取微信系统信息失败，使用备用方案:", error);
+            }
+        }
+        
+        // 备用方案：基于当前时间和随机数的持久化ID
+        const timestamp = Math.floor(Date.now() / 1000);
+        const random1 = Math.random().toString(36).substr(2, 8);
+        const random2 = Math.random().toString(36).substr(2, 6);
+        return `wxgame_persistent_${timestamp}_${random1}_${random2}`;
+    }
+    
+    // 清除持久化数据（开发测试用）
+    clearPersistentData() {
+        const STORAGE_KEY = 'persistent_device_id';
+        
+        try {
+            if (typeof wx !== 'undefined' && wx.removeStorageSync) {
+                // 微信小游戏环境
+                wx.removeStorageSync(STORAGE_KEY);
+                console.log("已清除微信小游戏存储的设备ID");
+            } else if (typeof localStorage !== 'undefined') {
+                // 浏览器环境
+                localStorage.removeItem(STORAGE_KEY);
+                console.log("已清除浏览器存储的设备ID");
+            }
+        } catch (error) {
+            console.error("清除持久化数据失败:", error);
+        }
+    }
+    
+    // 网络请求方法 - 适配微信小游戏环境
+    request(url, options = {}) {
+        return new Promise((resolve, reject) => {
+            // 微信小游戏环境中使用wx.request替代fetch
+            if (typeof wx !== 'undefined' && wx.request) {
                 wx.request({
                     url: url,
                     method: options.method || 'GET',
                     header: options.headers || {},
                     data: options.body ? JSON.parse(options.body) : {},
                     success: (res) => {
+                        // 微信小游戏的响应格式与fetch不同，需要适配
                         resolve(JSON.stringify(res.data));
                     },
                     fail: (error) => {
@@ -611,10 +733,15 @@ class NetworkManager {
                 });
             } else {
                 // 开发环境或其他环境，使用fetch
-                fetch(url, options)
-                    .then(response => response.text())
-                    .then(resolve)
-                    .catch(reject);
+                // 在微信小游戏中不支持fetch，这里仅用于测试
+                if (typeof fetch !== 'undefined') {
+                    fetch(url, options)
+                        .then(response => response.text())
+                        .then(resolve)
+                        .catch(reject);
+                } else {
+                    reject(new Error('网络请求API不可用'));
+                }
             }
         });
     }
@@ -635,6 +762,41 @@ class NetworkManager {
             this.websocket = null;
         }
         this.isConnected = false;
+    }
+    
+    // 屏幕调试日志功能
+    debugMessages = [];
+    maxDebugMessages = 10;
+    debugCanvas = null;
+    debugCtx = null;
+
+    debugLog(msg) {
+        if (typeof msg !== 'string') msg = JSON.stringify(msg);
+        this.debugMessages.push(`[${new Date().toLocaleTimeString()}] ${msg}`);
+        if (this.debugMessages.length > this.maxDebugMessages) {
+            this.debugMessages.shift();
+        }
+        this.drawDebugLog();
+    }
+
+    bindDebugCanvas(canvas) {
+        this.debugCanvas = canvas;
+        this.debugCtx = canvas.getContext('2d');
+    }
+
+    drawDebugLog() {
+        if (!this.debugCtx) return;
+        this.debugCtx.save();
+        this.debugCtx.globalAlpha = 0.7;
+        this.debugCtx.fillStyle = '#222';
+        this.debugCtx.fillRect(0, 0, this.debugCanvas.width, 20 + this.maxDebugMessages * 18);
+        this.debugCtx.globalAlpha = 1.0;
+        this.debugCtx.font = '14px monospace';
+        this.debugCtx.fillStyle = '#fff';
+        for (let i = 0; i < this.debugMessages.length; i++) {
+            this.debugCtx.fillText(this.debugMessages[i], 10, 20 + i * 18);
+        }
+        this.debugCtx.restore();
     }
     
     // 处理认证响应

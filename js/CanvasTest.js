@@ -33,10 +33,13 @@ function testCanvas() {
             
         } else {
             console.log("浏览器环境");
-            canvas = document.createElement('canvas');
-            canvas.width = 375;
-            canvas.height = 667;
-            document.body.appendChild(canvas);
+            // 在微信小游戏中不支持document API，这里仅用于测试
+            if (typeof document !== 'undefined') {
+                canvas = document.createElement('canvas');
+                canvas.width = 375;
+                canvas.height = 667;
+                document.body.appendChild(canvas);
+            }
         }
         
         console.log(`Canvas尺寸: ${canvas.width}x${canvas.height}`);
@@ -70,9 +73,6 @@ if (typeof wx !== 'undefined') {
     wx.onShow(() => {
         setTimeout(testCanvas, 100);
     });
-} else {
-    // 浏览器环境
-    document.addEventListener('DOMContentLoaded', testCanvas);
 }
 
 export { testCanvas };

@@ -94,67 +94,34 @@ class WaitingRoom {
     bindEvents() {
         // 微信小游戏触摸事件
         if (typeof wx !== 'undefined') {
-            wx.onTouchStart((e) => {
-                if (!this.isVisible) return;
-                
-                const touch = e.touches[0];
-                const touchX = touch.clientX;
-                const touchY = touch.clientY;
-                
-                this.handleClick(touchX, touchY);
-            });
-        } else {
-            // 浏览器环境的事件处理
-            // 鼠标移动事件
-            this.canvas.addEventListener('mousemove', (e) => {
-                if (!this.isVisible) return;
-                
-                const rect = this.canvas.getBoundingClientRect();
-                const mouseX = e.clientX - rect.left;
-                const mouseY = e.clientY - rect.top;
-                
-                this.updateHoverState(mouseX, mouseY);
-            });
-            
-            // 鼠标点击事件
-            this.canvas.addEventListener('click', (e) => {
-                if (!this.isVisible) return;
-                
-                const rect = this.canvas.getBoundingClientRect();
-                const mouseX = e.clientX - rect.left;
-                const mouseY = e.clientY - rect.top;
-                
-                this.handleClick(mouseX, mouseY);
-            });
-            
-            // 触摸事件（移动端浏览器支持）
-            this.canvas.addEventListener('touchstart', (e) => {
-                if (!this.isVisible) return;
-                
-                e.preventDefault();
-                const touch = e.touches[0];
-                const rect = this.canvas.getBoundingClientRect();
-                const touchX = touch.clientX - rect.left;
-                const touchY = touch.clientY - rect.top;
-                
-                this.handleClick(touchX, touchY);
-            });
+            this.setupEventListeners();
         }
+    }
+    
+    setupEventListeners() {
+        wx.onTouchStart((e) => {
+            if (!this.isVisible) return;
+            
+            const touch = e.touches[0];
+            const touchX = touch.clientX;
+            const touchY = touch.clientY;
+            
+            this.handleClick(touchX, touchY);
+        });
     }
     
     show() {
         if (this.isVisible) {
-            return;
-        } else {
-            this.isVisible = true;
+          return;
         }
+        this.isVisible = true;
         
         // 从GameStateManager获取当前房间信息
         const currentRoom = GameStateManager.getCurrentRoom();
         if (currentRoom && currentRoom.id) {
-            this.roomInfo = currentRoom;
-            this.roomId = currentRoom.id;
-            console.log("show: 从GameStateManager获取房间信息:", currentRoom);
+          this.roomInfo = currentRoom;
+          this.roomId = currentRoom.id;
+          console.log("show: 从GameStateManager获取房间信息:", currentRoom);
         }
         
         this.setupLayout();
@@ -164,19 +131,19 @@ class WaitingRoom {
         console.log("当前用户信息:", myUser);
         
         if (myUser && this.playerSlots.length > 0) {
-            if (!this.playerSlots[0].player || this.playerSlots[0].player.uid !== myUser.uid) {
-                this.playerSlots[0].player = {
-                    uid: myUser.uid,
-                    nickname: myUser.nickname || '我',
-                    avatar: myUser.avatar_url || '',
-                    is_ready: this.isReady || false
-                };
-                console.log("设置玩家槽位信息(初始化):", this.playerSlots[0].player);
-            } else {
-                this.playerSlots[0].player.nickname = myUser.nickname || this.playerSlots[0].player.nickname;
-                console.log("保留服务器ready状态:", this.playerSlots[0].player);
-            }
-            this.myPlayerIndex = 0;
+          if (!this.playerSlots[0].player || this.playerSlots[0].player.uid !== myUser.uid) {
+            this.playerSlots[0].player = {
+              uid: myUser.uid,
+              nickname: myUser.nickname || '我',
+              avatar: myUser.avatar_url || '',
+              is_ready: this.isReady || false
+            };
+            console.log("设置玩家槽位信息(初始化):", this.playerSlots[0].player);
+          } else {
+            this.playerSlots[0].player.nickname = myUser.nickname || this.playerSlots[0].player.nickname;
+            console.log("保留服务器ready状态:", this.playerSlots[0].player);
+          }
+          this.myPlayerIndex = 0;
         }
         
         this.render();
@@ -282,7 +249,7 @@ class WaitingRoom {
         if (this.isPointInButton(x, y, this.readyButton)) {
             this.onReadyClick();
         } else if (this.isPointInButton(x, y, this.leaveButton)) {
-            this.onLeaveClick();
+            this.onLeaveRoomClick();
         }
     }
     
@@ -385,7 +352,6 @@ class WaitingRoom {
         this.ctx.fillStyle = '#FFFFFF';
         // 确保房间ID是字符串格式显示
         const displayRoomId = this.roomId || "未知";
-        console.log("drawTitle: 显示房间ID:", displayRoomId, "原始值:", this.roomId);
         this.ctx.fillText(`房间号: ${displayRoomId}`, this.canvas.width / 2, baseY);
         
         this.ctx.font = '18px Arial';
@@ -540,11 +506,10 @@ class WaitingRoom {
         console.log('[WaitingRoom] 已发送准备请求，等待服务器广播状态');
     }
 
-    onLeaveClick() {
+    onLeaveRoomClick() {
         console.log("点击离开房间");
         
-        let shouldLeave = true;
-        
+        // 显示确认对话框
         if (typeof wx !== 'undefined' && wx.showModal) {
             wx.showModal({
                 title: '离开房间',
@@ -555,8 +520,8 @@ class WaitingRoom {
                     }
                 }
             });
-        } else {
-            shouldLeave = confirm('确定要离开房间吗？');
+        } else if (typeof confirm !== 'undefined') {
+            const shouldLeave = confirm('确定要离开房间吗？');
             if (shouldLeave) {
                 this.leaveRoom();
             }

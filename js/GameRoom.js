@@ -22,6 +22,10 @@ class GameRoom {
             textColor: '#ffffff'
         };
         
+        // 加载场景背景图
+        this.sceneImage = null;
+        this.loadSceneImage();
+        
         // 手牌区域
         this.handCardArea = new HandCardArea(canvas, this.ctx);
         this.handCardArea.onCardSelect((index, card, previousIndex) => {
@@ -77,6 +81,37 @@ class GameRoom {
         this.bindEvents();
     }
     
+    // 加载场景背景图
+    loadSceneImage() {
+        if (typeof wx !== 'undefined' && wx.createImage) {
+            // 微信小游戏环境
+            this.sceneImage = wx.createImage();
+            this.sceneImage.src = 'image/game_scene.webp';
+            this.sceneImage.onload = () => {
+                console.log('[GameRoom] 场景背景图加载成功');
+                if (this.isVisible) {
+                    this.render();
+                }
+            };
+            this.sceneImage.onerror = (err) => {
+                console.error('[GameRoom] 场景背景图加载失败:', err);
+            };
+        } else if (typeof Image !== 'undefined') {
+            // Web环境
+            this.sceneImage = new Image();
+            this.sceneImage.src = 'image/game_scene.webp';
+            this.sceneImage.onload = () => {
+                console.log('[GameRoom] 场景背景图加载成功');
+                if (this.isVisible) {
+                    this.render();
+                }
+            };
+            this.sceneImage.onerror = (err) => {
+                console.error('[GameRoom] 场景背景图加载失败:', err);
+            };
+        }
+    }
+    
     init() {
         // 监听游戏状态变化
         GameStateManager.onStateChange((oldState, newState) => {
@@ -113,40 +148,20 @@ class GameRoom {
     }
     
     bindEvents() {
-        // 微信小游戏触摸事件
+        this.setupEventListeners();
+    }
+    
+    setupEventListeners() {
+        // 微信小游戏环境中使用wx API处理事件
         if (typeof wx !== 'undefined') {
-            wx.onTouchStart((e) => {
+            // 使用wx.onTouchStart处理点击事件
+            wx.onTouchStart((res) => {
                 if (!this.isVisible) return;
                 
-                const touch = e.touches[0];
-                const touchX = touch.clientX;
-                const touchY = touch.clientY;
-                
-                this.handleClick(touchX, touchY);
-            });
-        } else {
-            // 浏览器环境的事件处理
-            this.canvas.addEventListener('click', (e) => {
-                if (!this.isVisible) return;
-                
-                const rect = this.canvas.getBoundingClientRect();
-                const mouseX = e.clientX - rect.left;
-                const mouseY = e.clientY - rect.top;
-                
-                this.handleClick(mouseX, mouseY);
-            });
-            
-            // 触摸事件（移动端浏览器支持）
-            this.canvas.addEventListener('touchstart', (e) => {
-                if (!this.isVisible) return;
-                
-                e.preventDefault();
-                const touch = e.touches[0];
-                const rect = this.canvas.getBoundingClientRect();
-                const touchX = touch.clientX - rect.left;
-                const touchY = touch.clientY - rect.top;
-                
-                this.handleClick(touchX, touchY);
+                if (res.touches && res.touches.length > 0) {
+                    const touch = res.touches[0];
+                    this.handleClick(touch.clientX, touch.clientY);
+                }
             });
         }
     }
@@ -256,8 +271,10 @@ class GameRoom {
                         icon: 'none',
                         duration: 2000
                     });
-                } else {
+                } else if (typeof alert !== 'undefined') {
                     alert(message);
+                } else {
+                    console.log("错误提示:", message);
                 }
                 return;
             }
@@ -294,15 +311,13 @@ class GameRoom {
         if (this.handCardArea && this.handCardArea.isVisible()) {
             // 检查点击坐标是否在手牌区域内
             if (this.handCardArea.isInHandCardArea(x, y)) {
+                // 直接调用手牌区域的点击处理方法
                 // 创建一个模拟的鼠标事件对象
-                const rect = this.canvas.getBoundingClientRect();
                 const simulatedEvent = {
-                    clientX: x + rect.left,
-                    clientY: y + rect.top,
+                    clientX: x,
+                    clientY: y,
                     preventDefault: () => {}
                 };
-                
-                // 直接调用手牌区域的点击处理方法
                 this.handCardArea.handleClick(simulatedEvent);
                 return;
             }
@@ -376,7 +391,7 @@ class GameRoom {
             });
             
             // 显示结果弹窗
-            if (typeof wx !== 'undefined') {
+            if (typeof wx !== 'undefined' && wx.showModal) {
                 wx.showModal({
                     title: '游戏结束',
                     content: resultMessage,
@@ -386,8 +401,11 @@ class GameRoom {
                         this.returnToWaitingRoom();
                     }
                 });
-            } else {
+            } else if (typeof alert !== 'undefined') {
                 alert(resultMessage);
+                this.returnToWaitingRoom();
+            } else {
+                console.log(resultMessage);
                 this.returnToWaitingRoom();
             }
         } else {
@@ -463,9 +481,12 @@ class GameRoom {
                 icon: 'none',
                 duration: 2000
             });
-        } else {
+        } else if (typeof alert !== 'undefined') {
             // 在浏览器环境中使用alert
             alert(message);
+        } else {
+            // 其他环境，输出到控制台
+            console.log("操作失败:", message);
         }
     }
     
@@ -498,10 +519,8 @@ class GameRoom {
     onSurrenderClick() {
         console.log("点击弃牌认输");
         
-        let shouldSurrender = false;
-        
         // 显示确认对话框
-        if (typeof wx !== 'undefined') {
+        if (typeof wx !== 'undefined' && wx.showModal) {
             wx.showModal({
                 title: '弃牌认输',
                 content: '确定要弃牌认输吗？这将结束游戏。',
@@ -511,11 +530,14 @@ class GameRoom {
                     }
                 }
             });
+        } else if (typeof confirm !== 'undefined') {
+            const shouldSurrender = confirm('确定要弃牌认输吗？这将结束游戏。');
+            if (shouldSurrender) {
+                this.sendSurrenderRequest();
+            }
         } else {
-            shouldSurrender = confirm('确定要弃牌认输吗？这将结束游戏。');
-        }
-        
-        if (shouldSurrender) {
+            // 其他环境直接认输
+            console.log("确定要弃牌认输吗？(默认选择是)");
             this.sendSurrenderRequest();
         }
     }
@@ -597,9 +619,15 @@ class GameRoom {
     render() {
         if (!this.isVisible) return;
         
-        // 清空画布
-        this.ctx.fillStyle = this.config.backgroundColor;
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        // 绘制场景背景图
+        if (this.sceneImage && this.sceneImage.complete) {
+            // 绘制背景图，填充整个画布
+            this.ctx.drawImage(this.sceneImage, 0, 0, this.canvas.width, this.canvas.height);
+        } else {
+            // 如果背景图未加载，使用纯色背景
+            this.ctx.fillStyle = this.config.backgroundColor;
+            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        }
         
         // 游戏中界面
         this.drawGameScreen();
@@ -615,8 +643,8 @@ class GameRoom {
         // 绘制顶部玩家信息区域
         this.drawPlayerInfoPanel();
         
-        // 绘制当前句子 - 放在手牌区域和桌面区域之间
-        this.drawCurrentSentence();
+        // 去掉当前句子区域
+        // this.drawCurrentSentence();
         
         // 绘制游戏操作按钮区域
         this.drawGameControlButtons();
@@ -658,29 +686,51 @@ class GameRoom {
     
     // 绘制桌面卡牌
     drawTableCards() {
-        // 计算桌面区域 - 考虑刘海屏调整后的位置
+        // 扩大并下移桌面区域
         const centerX = this.canvas.width / 2;
-        const centerY = this.canvas.height / 2 - 40; // 从-60调整为-40，给上方更多空间
+        const centerY = this.canvas.height / 2 + 30; // 下移桌面位置
+        
+        // 扩大桌面尺寸
+        this.tableArea.width = 350;
+        this.tableArea.height = 300;
         this.tableArea.x = centerX - this.tableArea.width / 2;
         this.tableArea.y = centerY - this.tableArea.height / 2;
         
-        // 固定提示信息 - 始终显示操作说明（放在最前面确保总是显示）
-        this.ctx.fillStyle = '#4CAF50';
-        this.ctx.font = 'bold 16px Arial';
+        // 提示信息 - 使用圆角样式
+        this.ctx.font = 'bold 15px "PingFang SC", "Microsoft YaHei", sans-serif';
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
         
-        // 绘制背景
-        const textWidth = 250;
-        const textHeight = 25;
+        const textWidth = 280;
+        const textHeight = 32;
         const textX = this.canvas.width / 2;
-        const textY = this.tableArea.y - 25;
+        const textY = this.tableArea.y - 30;
+        const radius = 16;
         
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-        this.ctx.fillRect(textX - textWidth/2, textY - textHeight/2, textWidth, textHeight);
+        // 渐变背景
+        const gradient = this.ctx.createLinearGradient(textX - textWidth/2, textY - textHeight/2, textX + textWidth/2, textY + textHeight/2);
+        gradient.addColorStop(0, 'rgba(38, 166, 154, 0.75)');
+        gradient.addColorStop(1, 'rgba(0, 137, 123, 0.75)');
+        this.ctx.fillStyle = gradient;
+        
+        // 绘制圆角矩形
+        this.ctx.save();
+        this.ctx.beginPath();
+        this.ctx.moveTo(textX - textWidth/2 + radius, textY - textHeight/2);
+        this.ctx.lineTo(textX + textWidth/2 - radius, textY - textHeight/2);
+        this.ctx.quadraticCurveTo(textX + textWidth/2, textY - textHeight/2, textX + textWidth/2, textY - textHeight/2 + radius);
+        this.ctx.lineTo(textX + textWidth/2, textY + textHeight/2 - radius);
+        this.ctx.quadraticCurveTo(textX + textWidth/2, textY + textHeight/2, textX + textWidth/2 - radius, textY + textHeight/2);
+        this.ctx.lineTo(textX - textWidth/2 + radius, textY + textHeight/2);
+        this.ctx.quadraticCurveTo(textX - textWidth/2, textY + textHeight/2, textX - textWidth/2, textY + textHeight/2 - radius);
+        this.ctx.lineTo(textX - textWidth/2, textY - textHeight/2 + radius);
+        this.ctx.quadraticCurveTo(textX - textWidth/2, textY - textHeight/2, textX - textWidth/2 + radius, textY - textHeight/2);
+        this.ctx.closePath();
+        this.ctx.fill();
+        this.ctx.restore();
         
         // 绘制文字
-        this.ctx.fillStyle = '#4CAF50';
+        this.ctx.fillStyle = '#fff';
         this.ctx.fillText('请选择手牌后点击桌面上的序号出牌', textX, textY);
         
         // 保存桌面区域信息供点击检测使用
@@ -693,15 +743,36 @@ class GameRoom {
         const lineSpacing = 20; // 行间距
         
         if (this.tableCards.length === 0) {
-            // 绘制空桌面
-            this.ctx.strokeStyle = '#666';
-            this.ctx.lineWidth = 2;
-            this.ctx.setLineDash([5, 5]);
-            this.ctx.strokeRect(this.tableArea.x, this.tableArea.y, this.tableArea.width, this.tableArea.height);
-            this.ctx.setLineDash([]);
+            // 绘制空桌面 - 圆角样式
+            const tableRadius = 20;
             
-            this.ctx.fillStyle = '#666';
-            this.ctx.font = '16px Arial';
+            // 半透明背景
+            this.ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+            this.ctx.save();
+            this.ctx.beginPath();
+            this.ctx.moveTo(this.tableArea.x + tableRadius, this.tableArea.y);
+            this.ctx.lineTo(this.tableArea.x + this.tableArea.width - tableRadius, this.tableArea.y);
+            this.ctx.quadraticCurveTo(this.tableArea.x + this.tableArea.width, this.tableArea.y, this.tableArea.x + this.tableArea.width, this.tableArea.y + tableRadius);
+            this.ctx.lineTo(this.tableArea.x + this.tableArea.width, this.tableArea.y + this.tableArea.height - tableRadius);
+            this.ctx.quadraticCurveTo(this.tableArea.x + this.tableArea.width, this.tableArea.y + this.tableArea.height, this.tableArea.x + this.tableArea.width - tableRadius, this.tableArea.y + this.tableArea.height);
+            this.ctx.lineTo(this.tableArea.x + tableRadius, this.tableArea.y + this.tableArea.height);
+            this.ctx.quadraticCurveTo(this.tableArea.x, this.tableArea.y + this.tableArea.height, this.tableArea.x, this.tableArea.y + this.tableArea.height - tableRadius);
+            this.ctx.lineTo(this.tableArea.x, this.tableArea.y + tableRadius);
+            this.ctx.quadraticCurveTo(this.tableArea.x, this.tableArea.y, this.tableArea.x + tableRadius, this.tableArea.y);
+            this.ctx.closePath();
+            this.ctx.fill();
+            
+            // 虚线边框
+            this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+            this.ctx.lineWidth = 2;
+            this.ctx.setLineDash([8, 8]);
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
+            this.ctx.restore();
+            
+            // 提示文字
+            this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+            this.ctx.font = '16px "PingFang SC", "Microsoft YaHei", sans-serif';
             this.ctx.textAlign = 'center';
             this.ctx.textBaseline = 'middle';
             this.ctx.fillText('桌面 - 暂无卡牌', centerX, centerY);
@@ -711,20 +782,35 @@ class GameRoom {
             return;
         }
         
-        // 绘制桌面背景
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-        this.ctx.fillRect(this.tableArea.x, this.tableArea.y, this.tableArea.width, this.tableArea.height);
+        // 绘制桌面背景 - 圆角样式
+        const tableRadius = 20;
+        const tableGradient = this.ctx.createLinearGradient(
+            this.tableArea.x, this.tableArea.y,
+            this.tableArea.x, this.tableArea.y + this.tableArea.height
+        );
+        tableGradient.addColorStop(0, 'rgba(255, 255, 255, 0.15)');
+        tableGradient.addColorStop(1, 'rgba(255, 255, 255, 0.08)');
+        this.ctx.fillStyle = tableGradient;
         
-        this.ctx.strokeStyle = '#ccc';
+        this.ctx.save();
+        this.ctx.beginPath();
+        this.ctx.moveTo(this.tableArea.x + tableRadius, this.tableArea.y);
+        this.ctx.lineTo(this.tableArea.x + this.tableArea.width - tableRadius, this.tableArea.y);
+        this.ctx.quadraticCurveTo(this.tableArea.x + this.tableArea.width, this.tableArea.y, this.tableArea.x + this.tableArea.width, this.tableArea.y + tableRadius);
+        this.ctx.lineTo(this.tableArea.x + this.tableArea.width, this.tableArea.y + this.tableArea.height - tableRadius);
+        this.ctx.quadraticCurveTo(this.tableArea.x + this.tableArea.width, this.tableArea.y + this.tableArea.height, this.tableArea.x + this.tableArea.width - tableRadius, this.tableArea.y + this.tableArea.height);
+        this.ctx.lineTo(this.tableArea.x + tableRadius, this.tableArea.y + this.tableArea.height);
+        this.ctx.quadraticCurveTo(this.tableArea.x, this.tableArea.y + this.tableArea.height, this.tableArea.x, this.tableArea.y + this.tableArea.height - tableRadius);
+        this.ctx.lineTo(this.tableArea.x, this.tableArea.y + tableRadius);
+        this.ctx.quadraticCurveTo(this.tableArea.x, this.tableArea.y, this.tableArea.x + tableRadius, this.tableArea.y);
+        this.ctx.closePath();
+        this.ctx.fill();
+        
+        // 边框
+        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
         this.ctx.lineWidth = 2;
-        this.ctx.strokeRect(this.tableArea.x, this.tableArea.y, this.tableArea.width, this.tableArea.height);
-        
-        // 绘制桌面标题
-        this.ctx.fillStyle = '#fff';
-        this.ctx.font = '16px Arial';
-        this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'top';
-        this.ctx.fillText('桌面', this.tableArea.x + this.tableArea.width / 2, this.tableArea.y + 5);
+        this.ctx.stroke();
+        this.ctx.restore();
         
         // 计算每行能容纳的卡牌数量
         const maxCardsPerRow = Math.max(1, Math.floor((this.tableArea.width - 40) / (cardWidth + cardSpacing)));
@@ -761,21 +847,42 @@ class GameRoom {
                 const cardY = currentY - cardHeight / 2;
                 const globalIndex = rowStartIndex + colIndex;
                 
-                // 绘制卡牌背景
-                this.ctx.fillStyle = '#4CAF50';
-                this.ctx.fillRect(cardX, cardY, cardWidth, cardHeight);
+                // 绘制卡牌背景 - 圆角样式
+                const cardRadius = 8;
+                const cardGradient = this.ctx.createLinearGradient(cardX, cardY, cardX, cardY + cardHeight);
+                cardGradient.addColorStop(0, '#66BB6A');
+                cardGradient.addColorStop(1, '#43A047');
+                this.ctx.fillStyle = cardGradient;
+                
+                this.ctx.save();
+                this.ctx.beginPath();
+                this.ctx.moveTo(cardX + cardRadius, cardY);
+                this.ctx.lineTo(cardX + cardWidth - cardRadius, cardY);
+                this.ctx.quadraticCurveTo(cardX + cardWidth, cardY, cardX + cardWidth, cardY + cardRadius);
+                this.ctx.lineTo(cardX + cardWidth, cardY + cardHeight - cardRadius);
+                this.ctx.quadraticCurveTo(cardX + cardWidth, cardY + cardHeight, cardX + cardWidth - cardRadius, cardY + cardHeight);
+                this.ctx.lineTo(cardX + cardRadius, cardY + cardHeight);
+                this.ctx.quadraticCurveTo(cardX, cardY + cardHeight, cardX, cardY + cardHeight - cardRadius);
+                this.ctx.lineTo(cardX, cardY + cardRadius);
+                this.ctx.quadraticCurveTo(cardX, cardY, cardX + cardRadius, cardY);
+                this.ctx.closePath();
+                this.ctx.fill();
                 
                 // 绘制卡牌边框
                 this.ctx.strokeStyle = '#2e7d32';
-                this.ctx.lineWidth = 1;
-                this.ctx.strokeRect(cardX, cardY, cardWidth, cardHeight);
+                this.ctx.lineWidth = 2;
+                this.ctx.stroke();
+                this.ctx.restore();
                 
                 // 绘制卡牌文字
                 this.ctx.fillStyle = '#fff';
-                this.ctx.font = '12px Arial';
+                this.ctx.font = 'bold 14px "PingFang SC", "Microsoft YaHei", sans-serif';
                 this.ctx.textAlign = 'center';
                 this.ctx.textBaseline = 'middle';
+                this.ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+                this.ctx.shadowBlur = 2;
                 this.ctx.fillText(card?.word || '未知', cardX + cardWidth / 2, cardY + cardHeight / 2);
+                this.ctx.shadowBlur = 0;
                 
                 // 绘制下一个插入位置标签（确保不超出右边界）
                 const nextPositionX = cardX + cardWidth + cardSpacing / 2;
@@ -799,45 +906,53 @@ class GameRoom {
             height: isLarge ? 30 : 20
         });
         
-        // 绘制圆形标签
+        // 绘制圆形标签 - 带阴影和渐变
         const radius = isLarge ? 15 : 10;
-        this.ctx.fillStyle = '#FF9800';
+        
+        this.ctx.save();
+        this.ctx.shadowColor = 'rgba(255, 152, 0, 0.5)';
+        this.ctx.shadowBlur = isLarge ? 10 : 6;
+        this.ctx.shadowOffsetY = 2;
+        
+        const gradient = this.ctx.createRadialGradient(x, y, 0, x, y, radius);
+        gradient.addColorStop(0, '#FFB74D');
+        gradient.addColorStop(1, '#FFA726');
+        this.ctx.fillStyle = gradient;
         this.ctx.beginPath();
         this.ctx.arc(x, y, radius, 0, 2 * Math.PI);
         this.ctx.fill();
         
+        this.ctx.shadowColor = 'transparent';
+        this.ctx.shadowBlur = 0;
+        this.ctx.shadowOffsetY = 0;
+        
         // 绘制边框
-        this.ctx.strokeStyle = '#F57C00';
-        this.ctx.lineWidth = 1;
+        this.ctx.strokeStyle = 'rgba(255, 204, 128, 0.8)';
+        this.ctx.lineWidth = 2;
+        this.ctx.beginPath();
+        this.ctx.arc(x, y, radius, 0, 2 * Math.PI);
         this.ctx.stroke();
+        this.ctx.restore();
         
         // 绘制数字
         this.ctx.fillStyle = '#fff';
-        this.ctx.font = isLarge ? '16px Arial' : '12px Arial';
+        this.ctx.font = isLarge ? 'bold 16px "PingFang SC", "Microsoft YaHei", sans-serif' : 'bold 12px "PingFang SC", "Microsoft YaHei", sans-serif';
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
         this.ctx.fillText(position.toString(), x, y);
     }
     
-    // 绘制弃牌认输按钮
     // 绘制玩家信息面板（竖排显示）
     drawPlayerInfoPanel() {
-        const startX = 10; // 减小左边距适配390px画布
-        const startY = 80; // 往下移动，避开刘海屏
-        const panelWidth = 360; // 适配390px画布
-        const rowHeight = 25; // 减小行高，改为单行显示
+        const startX = 20; // 左边距
+        const startY = 50; // 顶部位置
+        const panelWidth = 350; // 面板宽度
+        const rowHeight = 35; // 行高
         
-        // 绘制标题
-        this.ctx.fillStyle = '#fff';
-        this.ctx.font = 'bold 16px Arial';
-        this.ctx.textAlign = 'left';
-        this.ctx.textBaseline = 'top';
-        this.ctx.fillText('玩家信息', startX, startY);
+        // 去掉标题 "玩家信息"
         
         // 获取游戏状态中的玩家信息
         const gameState = this.gameStateManager.gameState;
-        
-        console.log('[玩家信息] 当前gameState:', gameState);
         
         // 尝试从多个来源获取玩家信息
         let players = [];
@@ -852,7 +967,7 @@ class GameRoom {
             if (currentTurn !== undefined && currentTurn >= 0 && currentTurn < players.length) {
                 currentPlayer = players[currentTurn];
                 hasValidGameState = true;
-                // 添加调试信息（仅在必要时显示）
+                // 添加调试信息（仅在回合变化时显示）
                 if (this.lastCurrentTurn !== currentTurn) {
                     console.log(`[回合更新] 当前回合: ${currentTurn}, 玩家ID: ${currentPlayer ? currentPlayer.id : 'null'}`);
                     this.lastCurrentTurn = currentTurn;
@@ -872,9 +987,8 @@ class GameRoom {
         
         const userInfo = GameStateManager.getUserInfo();
         
-        // 检查是否轮到我
+        // 检查是否轮到我（静默调用，不输出日志）
         const isMyTurn = this.isMyTurn();
-        console.log(`[玩家信息] 轮到我: ${isMyTurn}, hasValidGameState: ${hasValidGameState}, currentTurn: ${currentTurn}, players: ${players.length}`);
         
         // 移除"请等待其他玩家出牌"的提示，改为始终显示玩家信息
         // 轮次信息通过绿色边框在玩家列表中显示
@@ -907,61 +1021,80 @@ class GameRoom {
         
         // 绘制每个玩家的信息
         sortedPlayers.forEach((player, index) => {
-            const yPos = startY + 25 + index * rowHeight;
+            const yPos = startY + index * rowHeight;
             const playerId = player.id || player.uid || 0;
             const isCurrentPlayer = currentPlayer && (currentPlayer.id === playerId || currentPlayer.uid === playerId);
             const isMe = playerId === userInfo.uid;
             
-            // 如果是当前出牌人，绘制绿色边框（不遮盖内容）
+            // 绘制圆角背景
+            const bgRadius = 10;
+            const bgPadding = 8;
+            
+            // 根据玩家状态选择背景色
             if (isCurrentPlayer) {
-                this.ctx.strokeStyle = '#4CAF50';
-                this.ctx.lineWidth = 3;
-                this.ctx.strokeRect(startX - 5, yPos - 3, panelWidth - 10, rowHeight - 2);
-                
-                // 可选：添加轻微的绿色背景
-                this.ctx.fillStyle = 'rgba(76, 175, 80, 0.1)';
-                this.ctx.fillRect(startX - 4, yPos - 2, panelWidth - 12, rowHeight - 4);
+                // 当前出牌玩家 - 青绿色背景
+                const gradient = this.ctx.createLinearGradient(startX, yPos, startX, yPos + rowHeight);
+                gradient.addColorStop(0, 'rgba(38, 166, 154, 0.8)');
+                gradient.addColorStop(1, 'rgba(0, 137, 123, 0.8)');
+                this.ctx.fillStyle = gradient;
+            } else {
+                // 普通玩家 - 半透明白色背景
+                this.ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
             }
+            
+            // 绘制圆角矩形背景
+            this.ctx.save();
+            this.ctx.beginPath();
+            this.ctx.moveTo(startX + bgRadius, yPos);
+            this.ctx.lineTo(startX + panelWidth - bgRadius, yPos);
+            this.ctx.quadraticCurveTo(startX + panelWidth, yPos, startX + panelWidth, yPos + bgRadius);
+            this.ctx.lineTo(startX + panelWidth, yPos + rowHeight - bgRadius);
+            this.ctx.quadraticCurveTo(startX + panelWidth, yPos + rowHeight, startX + panelWidth - bgRadius, yPos + rowHeight);
+            this.ctx.lineTo(startX + bgRadius, yPos + rowHeight);
+            this.ctx.quadraticCurveTo(startX, yPos + rowHeight, startX, yPos + rowHeight - bgRadius);
+            this.ctx.lineTo(startX, yPos + bgRadius);
+            this.ctx.quadraticCurveTo(startX, yPos, startX + bgRadius, yPos);
+            this.ctx.closePath();
+            this.ctx.fill();
+            this.ctx.restore();
             
             // 玩家基本信息
             const score = player.currentScore || player.current_score || player.score || 0;
             const wins = player.winCount !== undefined ? player.winCount : 0;
             
-            // 一行显示：玩家ID、积分和获胜次数
-            this.ctx.fillStyle = isMe ? '#FFD700' : '#fff';
-            this.ctx.font = isCurrentPlayer ? 'bold 12px Arial' : '11px Arial';
+            // 显示玩家ID
+            this.ctx.fillStyle = isMe ? '#FFEB3B' : '#FFFFFF';
+            this.ctx.font = isCurrentPlayer ? 'bold 14px "PingFang SC", "Microsoft YaHei", sans-serif' : '13px "PingFang SC", "Microsoft YaHei", sans-serif';
             this.ctx.textAlign = 'left';
             this.ctx.textBaseline = 'middle';
             
-            // 构建完整的文本信息
-            const playerText = `玩家ID: ${playerId}    积分: ${score}分    获胜: ${wins}次`;
-            this.ctx.fillText(playerText, startX, yPos + rowHeight / 2);
+            const playerIdText = `玩家ID: ${playerId}`;
+            this.ctx.fillText(playerIdText, startX + bgPadding, yPos + rowHeight / 2);
             
-            // 如果是当前出牌人，在右侧显示状态和倒计时
-            if (isCurrentPlayer) {
-                // 显示当前回合状态
-                this.ctx.fillStyle = '#4CAF50';
-                this.ctx.font = 'bold 11px Arial';
-                this.ctx.textAlign = 'right';
-                const statusText = isMe ? '轮到你' : '出牌中';
-                this.ctx.fillText(statusText, startX + panelWidth - 50, yPos + rowHeight / 2);
-                
-                // 显示倒计时
-                if (this.turnTimer && !this.skipTurnClicked) {
-                    const timeLeft = this.currentTurnTimeLeft || 15;
-                    this.ctx.fillStyle = '#FF5722';
-                    this.ctx.font = 'bold 10px Arial';
-                    this.ctx.fillText(`${timeLeft}s`, startX + panelWidth - 20, yPos + rowHeight / 2);
-                }
+            // 显示积分和获胜次数
+            this.ctx.fillStyle = isMe ? '#FFF59D' : 'rgba(255, 255, 255, 0.9)';
+            this.ctx.font = '12px "PingFang SC", "Microsoft YaHei", sans-serif';
+            this.ctx.textAlign = 'right';
+            
+            const scoreText = `积分: ${score}    获胜: ${wins}次`;
+            this.ctx.fillText(scoreText, startX + panelWidth - bgPadding, yPos + rowHeight / 2);
+            
+            // 如果是当前出牌人，显示轮到你标识
+            if (isCurrentPlayer && isMe) {
+                // 在左侧显示"轮到你"标识
+                this.ctx.fillStyle = '#FFEB3B';
+                this.ctx.font = 'bold 12px "PingFang SC", "Microsoft YaHei", sans-serif';
+                this.ctx.textAlign = 'center';
+                this.ctx.fillText('轮到你', startX + panelWidth / 2, yPos + rowHeight / 2);
             }
         });
     }
     
     // 绘制游戏控制按钮区域
     drawGameControlButtons() {
-        const buttonWidth = 80; // 减小按钮宽度
-        const buttonHeight = 30; // 减小按钮高度
-        const buttonSpacing = 15; // 减小间距
+        const buttonWidth = 90; // 按钮宽度
+        const buttonHeight = 36; // 按钮高度
+        const buttonSpacing = 20; // 间距
         const startY = this.canvas.height - 180; // 在手牌区上方
         
         // 计算按钮位置（居中排列）
@@ -981,17 +1114,16 @@ class GameRoom {
             height: buttonHeight
         };
         
-        this.ctx.fillStyle = isMyTurn ? '#ff4444' : '#666'; // 不是自己回合时变灰
-        this.ctx.fillRect(surrenderButtonX, startY, buttonWidth, buttonHeight);
-        this.ctx.strokeStyle = isMyTurn ? '#cc0000' : '#444';
-        this.ctx.lineWidth = 2;
-        this.ctx.strokeRect(surrenderButtonX, startY, buttonWidth, buttonHeight);
-        
-        this.ctx.fillStyle = '#ffffff';
-        this.ctx.font = '12px Arial';
-        this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'middle';
-        this.ctx.fillText('弃牌认输', surrenderButtonX + buttonWidth / 2, startY + buttonHeight / 2);
+        // 绘制圆角按钮
+        this.drawRoundedButton(
+            surrenderButtonX,
+            startY,
+            buttonWidth,
+            buttonHeight,
+            '弃牌认输',
+            isMyTurn ? ['#EF5350', '#E53935'] : ['#757575', '#616161'],
+            isMyTurn
+        );
         
         // 跳过当前轮次按钮
         const skipButtonX = startX + buttonWidth + buttonSpacing;
@@ -1006,25 +1138,78 @@ class GameRoom {
         const tableIsEmpty = !this.tableCards || this.tableCards.length === 0;
         const canSkip = isMyTurn && !this.skipTurnClicked && !tableIsEmpty;
         
-        // 添加调试信息
-        console.log(`[跳过按钮状态] 轮到我: ${isMyTurn}, 未跳过: ${!this.skipTurnClicked}, 桌面非空: ${!tableIsEmpty}, 桌面卡牌数: ${this.tableCards ? this.tableCards.length : 0}, 最终可跳过: ${canSkip}`);
-        
-        this.ctx.fillStyle = canSkip ? '#2196F3' : '#666';
-        this.ctx.fillRect(skipButtonX, startY, buttonWidth, buttonHeight);
-        this.ctx.strokeStyle = canSkip ? '#1976D2' : '#444';
-        this.ctx.lineWidth = 2;
-        this.ctx.strokeRect(skipButtonX, startY, buttonWidth, buttonHeight);
-        
-        this.ctx.fillStyle = '#ffffff';
-        this.ctx.font = '12px Arial';
-        this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'middle';
-        this.ctx.fillText('跳过轮次', skipButtonX + buttonWidth / 2, startY + buttonHeight / 2);
+        // 绘制圆角按钮
+        this.drawRoundedButton(
+            skipButtonX,
+            startY,
+            buttonWidth,
+            buttonHeight,
+            '跳过轮次',
+            canSkip ? ['#42A5F5', '#1E88E5'] : ['#757575', '#616161'],
+            canSkip
+        );
         
         // 在跳过按钮旁边显示倒计时（只有当轮到我且可以跳过时才显示）
         if (canSkip && isMyTurn && this.turnTimer) {
             this.drawTurnTimer(skipButtonX + buttonWidth + 10, startY + buttonHeight / 2 - 5);
         }
+    }
+    
+    // 绘制圆角渐变按钮
+    drawRoundedButton(x, y, width, height, text, gradientColors, enabled = true) {
+        const radius = 8;
+        
+        this.ctx.save();
+        
+        // 绘制阴影
+        if (enabled) {
+            this.ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+            this.ctx.shadowBlur = 8;
+            this.ctx.shadowOffsetX = 0;
+            this.ctx.shadowOffsetY = 4;
+        }
+        
+        // 绘制渐变背景
+        const gradient = this.ctx.createLinearGradient(x, y, x, y + height);
+        gradient.addColorStop(0, gradientColors[0]);
+        gradient.addColorStop(1, gradientColors[1]);
+        this.ctx.fillStyle = gradient;
+        
+        // 绘制圆角矩形
+        this.ctx.beginPath();
+        this.ctx.moveTo(x + radius, y);
+        this.ctx.lineTo(x + width - radius, y);
+        this.ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+        this.ctx.lineTo(x + width, y + height - radius);
+        this.ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+        this.ctx.lineTo(x + radius, y + height);
+        this.ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+        this.ctx.lineTo(x, y + radius);
+        this.ctx.quadraticCurveTo(x, y, x + radius, y);
+        this.ctx.closePath();
+        this.ctx.fill();
+        
+        // 绘制边框
+        if (enabled) {
+            this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+            this.ctx.lineWidth = 2;
+        } else {
+            this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+            this.ctx.lineWidth = 1;
+        }
+        this.ctx.stroke();
+        
+        this.ctx.restore();
+        
+        // 绘制文字
+        this.ctx.fillStyle = enabled ? '#fff' : 'rgba(255, 255, 255, 0.5)';
+        this.ctx.font = 'bold 14px "PingFang SC", "Microsoft YaHei", sans-serif';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+        this.ctx.shadowBlur = 2;
+        this.ctx.fillText(text, x + width / 2, y + height / 2);
+        this.ctx.shadowBlur = 0;
     }
     
     // 绘制回合倒计时
@@ -1045,7 +1230,6 @@ class GameRoom {
         
         // 如果已经出牌但还没收到服务器状态更新，返回false
         if (this.hasPlayedCard) {
-            console.log("[GameRoom] isMyTurn: 已出牌等待服务器状态，返回false");
             return false;
         }
         
@@ -1455,6 +1639,14 @@ class GameRoom {
         });
         
         console.log(`[GameRoom] 出牌请求已发送到服务器`);
+    }
+    
+    // 更新画布尺寸
+    updateCanvasSize() {
+        if (this.isVisible) {
+            this.setupLayout();
+            this.render();
+        }
     }
 }
 

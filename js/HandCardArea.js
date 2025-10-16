@@ -192,42 +192,86 @@ class HandCardArea {
         const rect = this.cardRects.find(r => r.index === index);
         if (!rect || !rect.visible) return;
         
-        // 确定卡牌颜色
-        let cardColor = '#2196F3'; // 默认蓝色
+        // 确定卡牌状态
         const isSelected = index === this.selectedCardIndex;
         const isHovered = index === this.hoveredCardIndex;
         
+        // 圆角半径
+        const radius = 10;
+        
+        this.ctx.save();
+        
+        // 绘制卡牌阴影
         if (isSelected) {
-            cardColor = this.config.selectedColor;
+            this.ctx.shadowColor = 'rgba(76, 175, 80, 0.6)';
+            this.ctx.shadowBlur = 15;
+            this.ctx.shadowOffsetY = 5;
         } else if (isHovered) {
-            cardColor = this.config.hoverColor;
+            this.ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+            this.ctx.shadowBlur = 8;
+            this.ctx.shadowOffsetY = 3;
         }
         
-        // 绘制卡牌背景
-        this.ctx.fillStyle = cardColor;
-        this.ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+        // 绘制渐变背景
+        let gradient;
+        if (isSelected) {
+            gradient = this.ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.height);
+            gradient.addColorStop(0, '#66BB6A');
+            gradient.addColorStop(1, '#43A047');
+        } else if (isHovered) {
+            gradient = this.ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.height);
+            gradient.addColorStop(0, '#64B5F6');
+            gradient.addColorStop(1, '#42A5F5');
+        } else {
+            gradient = this.ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.height);
+            gradient.addColorStop(0, '#42A5F5');
+            gradient.addColorStop(1, '#1E88E5');
+        }
+        this.ctx.fillStyle = gradient;
+        
+        // 绘制圆角矩形
+        this.ctx.beginPath();
+        this.ctx.moveTo(rect.x + radius, rect.y);
+        this.ctx.lineTo(rect.x + rect.width - radius, rect.y);
+        this.ctx.quadraticCurveTo(rect.x + rect.width, rect.y, rect.x + rect.width, rect.y + radius);
+        this.ctx.lineTo(rect.x + rect.width, rect.y + rect.height - radius);
+        this.ctx.quadraticCurveTo(rect.x + rect.width, rect.y + rect.height, rect.x + rect.width - radius, rect.y + rect.height);
+        this.ctx.lineTo(rect.x + radius, rect.y + rect.height);
+        this.ctx.quadraticCurveTo(rect.x, rect.y + rect.height, rect.x, rect.y + rect.height - radius);
+        this.ctx.lineTo(rect.x, rect.y + radius);
+        this.ctx.quadraticCurveTo(rect.x, rect.y, rect.x + radius, rect.y);
+        this.ctx.closePath();
+        this.ctx.fill();
+        
+        // 重置阴影
+        this.ctx.shadowColor = 'transparent';
+        this.ctx.shadowBlur = 0;
+        this.ctx.shadowOffsetY = 0;
         
         // 绘制卡牌边框
-        this.ctx.strokeStyle = index === this.selectedCardIndex ? '#fff' : '#333';
-        this.ctx.lineWidth = index === this.selectedCardIndex ? 3 : 1;
-        this.ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
+        this.ctx.strokeStyle = isSelected ? '#FFEB3B' : 'rgba(255, 255, 255, 0.3)';
+        this.ctx.lineWidth = isSelected ? 3 : 2;
+        this.ctx.stroke();
+        
+        this.ctx.restore();
         
         // 绘制卡牌文字
         this.ctx.fillStyle = '#fff';
-        this.ctx.font = '12px Arial';
+        this.ctx.font = 'bold 14px "PingFang SC", "Microsoft YaHei", sans-serif';
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
         
-        // 绘制单词（主要内容）
-        const word = card.word || '未知';
-        this.ctx.fillText(word, rect.x + rect.width / 2, rect.y + rect.height / 2 - 5);
+        // 添加文字阴影
+        this.ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+        this.ctx.shadowBlur = 3;
         
-        // 绘制词性（小字）
-        if (card.wordClass) {
-            this.ctx.font = '10px Arial';
-            this.ctx.fillStyle = '#ccc';
-            this.ctx.fillText(card.wordClass, rect.x + rect.width / 2, rect.y + rect.height / 2 + 15);
-        }
+        // 绘制单词（主要内容）- 居中显示
+        const word = card.word || '未知';
+        this.ctx.fillText(word, rect.x + rect.width / 2, rect.y + rect.height / 2);
+        
+        // 重置阴影
+        this.ctx.shadowColor = 'transparent';
+        this.ctx.shadowBlur = 0;
     }
     
     // 文字自动换行
@@ -254,36 +298,36 @@ class HandCardArea {
     
     // 设置事件监听器
     setupEventListeners() {
-        this.canvas.addEventListener('click', this.boundHandleClick);
-        this.canvas.addEventListener('mousemove', this.boundHandleMouseMove);
-        this.canvas.addEventListener('wheel', this.boundHandleWheel);
-        
-        // 鼠标拖拽事件
-        this.canvas.addEventListener('mousedown', this.boundHandleMouseDown);
-        this.canvas.addEventListener('mouseup', this.boundHandleMouseUp);
-        document.addEventListener('mouseup', this.boundHandleMouseUp); // 全局监听，防止鼠标移出画布
-        
-        // 触摸事件
-        this.canvas.addEventListener('touchstart', this.boundHandleTouchStart, { passive: false });
-        this.canvas.addEventListener('touchmove', this.boundHandleTouchMove, { passive: false });
-        this.canvas.addEventListener('touchend', this.boundHandleTouchEnd);
+        // 微信小游戏环境中使用wx API处理事件
+        if (typeof wx !== 'undefined') {
+            // 使用wx API替代canvas事件
+            wx.onTouchStart(this.boundHandleTouchStart);
+            wx.onTouchMove(this.boundHandleTouchMove);
+            wx.onTouchEnd(this.boundHandleTouchEnd);
+            
+            // 使用wx.onTouchStart处理点击事件
+            wx.onTouchStart((res) => {
+                if (res.touches && res.touches.length > 0) {
+                    const touch = res.touches[0];
+                    // 创建模拟事件对象
+                    const simulatedEvent = {
+                        clientX: touch.clientX,
+                        clientY: touch.clientY,
+                        preventDefault: () => {},
+                        touches: res.touches
+                    };
+                    this.boundHandleClick(simulatedEvent);
+                }
+            });
+        }
     }
     
     // 移除事件监听器
     removeEventListeners() {
-        this.canvas.removeEventListener('click', this.boundHandleClick);
-        this.canvas.removeEventListener('mousemove', this.boundHandleMouseMove);
-        this.canvas.removeEventListener('wheel', this.boundHandleWheel);
-        
-        // 鼠标拖拽事件
-        this.canvas.removeEventListener('mousedown', this.boundHandleMouseDown);
-        this.canvas.removeEventListener('mouseup', this.boundHandleMouseUp);
-        document.removeEventListener('mouseup', this.boundHandleMouseUp);
-        
-        // 触摸事件
-        this.canvas.removeEventListener('touchstart', this.boundHandleTouchStart);
-        this.canvas.removeEventListener('touchmove', this.boundHandleTouchMove);
-        this.canvas.removeEventListener('touchend', this.boundHandleTouchEnd);
+        // 微信小游戏环境中不支持removeEventListener，事件监听器会在页面销毁时自动移除
+        if (typeof wx !== 'undefined') {
+            console.log("微信小游戏环境中事件监听器将在页面销毁时自动移除");
+        }
     }
     
     // 选择卡牌
@@ -419,15 +463,18 @@ class HandCardArea {
     
     // 处理鼠标滚轮事件
     handleWheel(event) {
-        // 检查鼠标是否在手牌区域内
-        const rect = this.canvas.getBoundingClientRect();
-        const x = event.clientX - rect.left;
-        const y = event.clientY - rect.top;
+        // 微信小游戏环境中不支持getBoundingClientRect，使用其他方式获取坐标
+        let x, y;
+        if (typeof wx !== 'undefined') {
+            // 在微信小游戏环境中，我们假设事件对象已经包含了相对于canvas的坐标
+            x = event.clientX || 0;
+            y = event.clientY || 0;
+        } else {
+            return; // 无法获取坐标，直接返回
+        }
         
         if (x >= this.areaRect.x && x <= this.areaRect.x + this.areaRect.width &&
             y >= this.areaRect.y && y <= this.areaRect.y + this.areaRect.height) {
-            
-            event.preventDefault();
             
             if (event.deltaY > 0) {
                 this.scrollRight();
@@ -439,14 +486,19 @@ class HandCardArea {
     
     // 鼠标按下事件处理
     handleMouseDown(event) {
-        const rect = this.canvas.getBoundingClientRect();
-        const x = event.clientX - rect.left;
-        const y = event.clientY - rect.top;
+        // 微信小游戏环境中不支持getBoundingClientRect，使用其他方式获取坐标
+        let x, y;
+        if (typeof wx !== 'undefined') {
+            // 在微信小游戏环境中，我们假设事件对象已经包含了相对于canvas的坐标
+            x = event.clientX || 0;
+            y = event.clientY || 0;
+        } else {
+            return; // 无法获取坐标，直接返回
+        }
         
         // 检查是否在手牌区域内
         if (this.isInHandCardArea(x, y)) {
             this.startDrag(x);
-            event.preventDefault();
         }
     }
     
@@ -459,26 +511,41 @@ class HandCardArea {
     
     // 触摸开始事件处理
     handleTouchStart(event) {
-        const rect = this.canvas.getBoundingClientRect();
-        const touch = event.touches[0];
-        const x = touch.clientX - rect.left;
-        const y = touch.clientY - rect.top;
-        
-        // 检查是否在手牌区域内
-        if (this.isInHandCardArea(x, y)) {
-            this.startDrag(x);
-            event.preventDefault();
+        if (event.touches && event.touches.length > 0) {
+            const touch = event.touches[0];
+            
+            // 微信小游戏环境中不支持getBoundingClientRect，使用其他方式获取坐标
+            let x, y;
+            if (typeof wx !== 'undefined') {
+                // 在微信小游戏环境中，我们直接使用touch坐标
+                x = touch.clientX || 0;
+                y = touch.clientY || 0;
+            } else {
+                return; // 无法获取坐标，直接返回
+            }
+            
+            // 检查是否在手牌区域内
+            if (this.isInHandCardArea(x, y)) {
+                this.startDrag(x);
+            }
         }
     }
     
     // 触摸移动事件处理
     handleTouchMove(event) {
-        if (this.dragState.isDragging) {
-            const rect = this.canvas.getBoundingClientRect();
+        if (this.dragState.isDragging && event.touches && event.touches.length > 0) {
             const touch = event.touches[0];
-            const x = touch.clientX - rect.left;
+            
+            // 微信小游戏环境中不支持getBoundingClientRect，使用其他方式获取坐标
+            let x;
+            if (typeof wx !== 'undefined') {
+                // 在微信小游戏环境中，我们直接使用touch坐标
+                x = touch.clientX || 0;
+            } else {
+                return; // 无法获取坐标，直接返回
+            }
+            
             this.updateDrag(x);
-            event.preventDefault();
         }
     }
     
@@ -546,9 +613,15 @@ class HandCardArea {
     
     // 重写鼠标移动处理，在拖拽时更新拖拽状态
     handleMouseMove(event) {
-        const rect = this.canvas.getBoundingClientRect();
-        const x = event.clientX - rect.left;
-        const y = event.clientY - rect.top;
+        // 微信小游戏环境中不支持getBoundingClientRect，使用其他方式获取坐标
+        let x, y;
+        if (typeof wx !== 'undefined') {
+            // 在微信小游戏环境中，我们假设事件对象已经包含了相对于canvas的坐标
+            x = event.clientX || 0;
+            y = event.clientY || 0;
+        } else {
+            return; // 无法获取坐标，直接返回
+        }
         
         // 如果正在拖拽，更新拖拽状态
         if (this.dragState.isDragging) {
@@ -573,9 +646,13 @@ class HandCardArea {
             this.hoveredCardIndex = newHoveredIndex;
             // 更新鼠标指针样式
             if (this.isInHandCardArea(x, y) && this.handCards.length > this.actualMaxVisible) {
-                this.canvas.style.cursor = 'grab'; // 在手牌区域显示可拖拽光标
+                if (this.canvas) {
+                    this.canvas.style.cursor = 'grab'; // 在手牌区域显示可拖拽光标
+                }
             } else {
-                this.canvas.style.cursor = (newHoveredIndex >= 0) ? 'pointer' : 'default';
+                if (this.canvas) {
+                    this.canvas.style.cursor = (newHoveredIndex >= 0) ? 'pointer' : 'default';
+                }
             }
         }
     }
@@ -587,9 +664,15 @@ class HandCardArea {
             return;
         }
         
-        const rect = this.canvas.getBoundingClientRect();
-        const x = event.clientX - rect.left;
-        const y = event.clientY - rect.top;
+        // 微信小游戏环境中不支持getBoundingClientRect，使用其他方式获取坐标
+        let x, y;
+        if (typeof wx !== 'undefined') {
+            // 在微信小游戏环境中，我们假设事件对象已经包含了相对于canvas的坐标
+            x = event.clientX || 0;
+            y = event.clientY || 0;
+        } else {
+            return; // 无法获取坐标，直接返回
+        }
         
         // 检查是否在手牌区域内
         if (!this.isInHandCardArea(x, y)) {
@@ -621,9 +704,12 @@ class HandCardArea {
                 icon: 'none',
                 duration: 2000
             });
-        } else {
+        } else if (typeof alert !== 'undefined') {
             // 在浏览器环境中使用alert
             alert(message);
+        } else {
+            // 其他环境，输出到控制台
+            console.log("错误提示:", message);
         }
     }
     

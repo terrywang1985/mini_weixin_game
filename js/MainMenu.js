@@ -82,85 +82,7 @@ class MainMenu {
     bindEvents() {
         // 微信小游戏触摸事件
         if (typeof wx !== 'undefined') {
-            wx.onTouchStart((e) => {
-                if (!this.isVisible) return;
-                
-                const touch = e.touches[0];
-                const touchX = touch.clientX;
-                const touchY = touch.clientY;
-                
-                // 检查是否点击了按钮
-                this.buttons.forEach(button => {
-                    if (this.isPointInButton(touchX, touchY, button)) {
-                        button.onClick();
-                    }
-                });
-                
-                // 检查是否点击了重连按钮
-                if (this.reconnectButton && this.isPointInButton(touchX, touchY, this.reconnectButton)) {
-                    this.onReconnectClick();
-                }
-            });
-        } else {
-            // 浏览器环境的事件处理
-            // 鼠标移动事件
-            this.canvas.addEventListener('mousemove', (e) => {
-                if (!this.isVisible) return;
-                
-                const rect = this.canvas.getBoundingClientRect();
-                const mouseX = e.clientX - rect.left;
-                const mouseY = e.clientY - rect.top;
-                
-                this.buttons.forEach(button => {
-                    button.isHovered = this.isPointInButton(mouseX, mouseY, button);
-                });
-                
-                this.render();
-            });
-            
-            // 鼠标点击事件
-            this.canvas.addEventListener('click', (e) => {
-                if (!this.isVisible) return;
-                
-                const rect = this.canvas.getBoundingClientRect();
-                const mouseX = e.clientX - rect.left;
-                const mouseY = e.clientY - rect.top;
-                
-                // 检查是否点击了按钮
-                this.buttons.forEach(button => {
-                    if (this.isPointInButton(mouseX, mouseY, button)) {
-                        button.onClick();
-                    }
-                });
-                
-                // 检查是否点击了重连按钮
-                if (this.reconnectButton && this.isPointInButton(mouseX, mouseY, this.reconnectButton)) {
-                    this.onReconnectClick();
-                }
-            });
-            
-            // 触摸事件（移动端浏览器支持）
-            this.canvas.addEventListener('touchstart', (e) => {
-                if (!this.isVisible) return;
-                
-                e.preventDefault();
-                const touch = e.touches[0];
-                const rect = this.canvas.getBoundingClientRect();
-                const touchX = touch.clientX - rect.left;
-                const touchY = touch.clientY - rect.top;
-                
-                // 检查是否点击了按钮
-                this.buttons.forEach(button => {
-                    if (this.isPointInButton(touchX, touchY, button)) {
-                        button.onClick();
-                    }
-                });
-                
-                // 检查是否点击了重连按钮
-                if (this.reconnectButton && this.isPointInButton(touchX, touchY, this.reconnectButton)) {
-                    this.onReconnectClick();
-                }
-            });
+            this.setupEventListeners();
         }
     }
     
@@ -344,34 +266,31 @@ class MainMenu {
         if (typeof window !== 'undefined' && window.mainInstance) {
             window.mainInstance.reconnect();
         }
+        // 在微信小游戏中不支持window API，这里仅用于测试
+        // 微信小游戏中的重连逻辑应该通过其他方式实现
     }
     
     showJoinRoomDialog() {
+        console.log("显示加入房间对话框");
+        
+        // 使用微信小游戏的输入框API替代prompt
         if (typeof wx !== 'undefined' && wx.showModal) {
-            // 微信小游戏环境
             wx.showModal({
                 title: '加入房间',
-                content: '请输入朋友的房间号',
                 editable: true,
-                placeholderText: '输入房间号...',
+                placeholderText: '请输入朋友的房间号',
                 success: (res) => {
                     if (res.confirm && res.content) {
                         const roomId = res.content.trim();
-                        if (roomId && /^\d+$/.test(roomId)) {
+                        if (roomId) {
                             console.log("加入房间:", roomId);
                             this.networkManager.joinRoom(roomId);
-                        } else {
-                            wx.showToast({
-                                title: '请输入有效的房间号（纯数字）',
-                                icon: 'none',
-                                duration: 2000
-                            });
                         }
                     }
                 }
             });
         } else if (typeof prompt !== 'undefined') {
-            // 浏览器环境
+            // 浏览器环境 - 显示空的输入框，提示文字作为第二个参数
             const roomId = prompt("请输入朋友的房间号:", "");
             
             if (roomId && roomId.trim()) {
@@ -408,6 +327,85 @@ class MainMenu {
         ErrorMessageHandler.showMessage(message);
     }
     
+    setupEventListeners() {
+        // 微信小游戏环境中使用wx API处理事件
+        if (typeof wx !== 'undefined') {
+            // 使用wx.onTouchStart处理点击和触摸事件
+            wx.onTouchStart((res) => {
+                if (!this.isVisible) return;
+                
+                if (res.touches && res.touches.length > 0) {
+                    const touch = res.touches[0];
+                    // 创建模拟事件对象
+                    const simulatedEvent = {
+                        clientX: touch.clientX,
+                        clientY: touch.clientY,
+                        preventDefault: () => {}
+                    };
+                    this.handleClick(simulatedEvent);
+                }
+            });
+            
+            // 使用wx.onTouchMove处理鼠标移动事件
+            wx.onTouchMove((res) => {
+                if (!this.isVisible) return;
+                
+                if (res.touches && res.touches.length > 0) {
+                    const touch = res.touches[0];
+                    // 创建模拟事件对象
+                    const simulatedEvent = {
+                        clientX: touch.clientX,
+                        clientY: touch.clientY,
+                        preventDefault: () => {}
+                    };
+                    this.onMouseMove(simulatedEvent);
+                }
+            });
+        }
+    }
+    
+    onMouseMove(event) {
+        // 微信小游戏环境中不支持getBoundingClientRect，使用其他方式获取坐标
+        let x, y;
+        if (typeof wx !== 'undefined') {
+            // 在微信小游戏环境中，我们假设事件对象已经包含了相对于canvas的坐标
+            x = event.clientX || 0;
+            y = event.clientY || 0;
+        } else {
+            return; // 无法获取坐标，直接返回
+        }
+        
+        this.buttons.forEach(button => {
+            button.isHovered = this.isPointInButton(x, y, button);
+        });
+        
+        this.render();
+    }
+    
+    handleClick(event) {
+        // 微信小游戏环境中不支持getBoundingClientRect，使用其他方式获取坐标
+        let x, y;
+        if (typeof wx !== 'undefined') {
+            // 在微信小游戏环境中，我们假设事件对象已经包含了相对于canvas的坐标
+            x = event.clientX || event.touches?.[0]?.clientX || 0;
+            y = event.clientY || event.touches?.[0]?.clientY || 0;
+        } else {
+            return; // 无法获取坐标，直接返回
+        }
+        
+        // 检查是否点击了按钮
+        this.buttons.forEach(button => {
+            if (this.isPointInButton(x, y, button)) {
+                button.onClick();
+            }
+        });
+        
+        // 检查是否点击了重连按钮
+        if (this.reconnectButton && this.isPointInButton(x, y, this.reconnectButton)) {
+            this.onReconnectClick();
+        }
+    }
+    
     // 更新画布尺寸
     updateCanvasSize() {
         // 重新计算按钮位置
@@ -425,10 +423,10 @@ class MainMenu {
         this.buttons = [];
         this.reconnectButton = null;
         
-        // 移除事件监听器
-        this.canvas.removeEventListener('mousemove', this.onMouseMove);
-        this.canvas.removeEventListener('click', this.onClick);
-        this.canvas.removeEventListener('touchstart', this.onTouchStart);
+        // 在微信小游戏中不支持removeEventListener，事件监听器会在页面销毁时自动移除
+        if (typeof wx !== 'undefined') {
+            console.log("微信小游戏环境中事件监听器将在页面销毁时自动移除");
+        }
     }
 }
 
