@@ -17,7 +17,7 @@ message MatchRpcResponse {
   game.ErrorCode ret = 1;
 }
 
-message CancelMatchRequest {
+message CancelMatchRpcRequest {
   uint64 player_id = 1;
 }
 
@@ -25,5 +25,5 @@ message CancelMatchRequest {
 // 匹配服务
 service MatchService {
   rpc StartMatch(MatchRpcRequest) returns (MatchRpcResponse);
-  rpc CancelMatch(CancelMatchRequest) returns (MatchRpcResponse);
+  rpc CancelMatch(CancelMatchRpcRequest) returns (MatchRpcResponse);
 }

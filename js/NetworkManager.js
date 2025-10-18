@@ -22,7 +22,11 @@ class NetworkManager {
         this.gatewayUrl = "";
         
         // 服务器配置
-        this.loginUrl = "https://3qk7.com/login";
+ //       this.loginUrl = "https://3qk7.com/login";
+
+        //本地测试
+        this.loginUrl = "http://localhost:8081/login";
+
         this.websocketUrl = "";
         
         // 用户信息

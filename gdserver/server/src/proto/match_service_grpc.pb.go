@@ -30,7 +30,7 @@ const (
 // 匹配服务
 type MatchServiceClient interface {
 	StartMatch(ctx context.Context, in *MatchRpcRequest, opts ...grpc.CallOption) (*MatchRpcResponse, error)
-	CancelMatch(ctx context.Context, in *CancelMatchRequest, opts ...grpc.CallOption) (*MatchRpcResponse, error)
+	CancelMatch(ctx context.Context, in *CancelMatchRpcRequest, opts ...grpc.CallOption) (*MatchRpcResponse, error)
 }
 
 type matchServiceClient struct {
@@ -51,7 +51,7 @@ func (c *matchServiceClient) StartMatch(ctx context.Context, in *MatchRpcRequest
 	return out, nil
 }
 
-func (c *matchServiceClient) CancelMatch(ctx context.Context, in *CancelMatchRequest, opts ...grpc.CallOption) (*MatchRpcResponse, error) {
+func (c *matchServiceClient) CancelMatch(ctx context.Context, in *CancelMatchRpcRequest, opts ...grpc.CallOption) (*MatchRpcResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(MatchRpcResponse)
 	err := c.cc.Invoke(ctx, MatchService_CancelMatch_FullMethodName, in, out, cOpts...)
@@ -68,7 +68,7 @@ func (c *matchServiceClient) CancelMatch(ctx context.Context, in *CancelMatchReq
 // 匹配服务
 type MatchServiceServer interface {
 	StartMatch(context.Context, *MatchRpcRequest) (*MatchRpcResponse, error)
-	CancelMatch(context.Context, *CancelMatchRequest) (*MatchRpcResponse, error)
+	CancelMatch(context.Context, *CancelMatchRpcRequest) (*MatchRpcResponse, error)
 	mustEmbedUnimplementedMatchServiceServer()
 }
 
@@ -82,7 +82,7 @@ type UnimplementedMatchServiceServer struct{}
 func (UnimplementedMatchServiceServer) StartMatch(context.Context, *MatchRpcRequest) (*MatchRpcResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StartMatch not implemented")
 }
-func (UnimplementedMatchServiceServer) CancelMatch(context.Context, *CancelMatchRequest) (*MatchRpcResponse, error) {
+func (UnimplementedMatchServiceServer) CancelMatch(context.Context, *CancelMatchRpcRequest) (*MatchRpcResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CancelMatch not implemented")
 }
 func (UnimplementedMatchServiceServer) mustEmbedUnimplementedMatchServiceServer() {}
@@ -125,7 +125,7 @@ func _MatchService_StartMatch_Handler(srv interface{}, ctx context.Context, dec 
 }
 
 func _MatchService_CancelMatch_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CancelMatchRequest)
+	in := new(CancelMatchRpcRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -137,7 +137,7 @@ func _MatchService_CancelMatch_Handler(srv interface{}, ctx context.Context, dec
 		FullMethod: MatchService_CancelMatch_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MatchServiceServer).CancelMatch(ctx, req.(*CancelMatchRequest))
+		return srv.(MatchServiceServer).CancelMatch(ctx, req.(*CancelMatchRpcRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }

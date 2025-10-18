@@ -195,8 +195,14 @@ message MatchResultNotify {
   RoomDetail room = 2;               // 房间详情
 }
 
+//取消匹配请求
+message CancelMatchRequest {
+  uint64 player_id = 1;
+}
 
-
+message CancelMatchResponse {
+  ErrorCode ret = 1;
+}
 
 enum ErrorCode {
   OK = 0;
@@ -263,6 +269,10 @@ enum MessageId {
   MATCH_RESPONSE = 27;
 
   MATCH_RESULT_NOTIFY = 28; //匹配结果通知
+  //留一个空，因为所有请求消息ID都是偶数，响应消息ID都是奇数
+
+  CANCEL_MATCH_REQUEST = 30;
+  CANCEL_MATCH_RESPONSE = 31;
 
 }
 
