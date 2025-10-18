@@ -374,7 +374,20 @@ class MainMenu {
         // 直接创建房间，不弹出对话框
         const defaultName = `我的房间`;
         console.log("创建房间:", defaultName);
-        this.networkManager.createRoom(defaultName);
+        
+        // 使用Promise等待服务器响应
+        this.networkManager.createRoom(defaultName)
+            .then(room => {
+                console.log("[MainMenu] 房间创建成功，已自动切换到等待房间");
+            })
+            .catch(error => {
+                console.error("[MainMenu] 创建房间失败:", error);
+                if (error.errorMessage) {
+                    this.showMessage(error.errorMessage);
+                } else {
+                    this.showMessage("创建房间失败: " + error.message);
+                }
+            });
     }
     
     // 处理加入房间失败

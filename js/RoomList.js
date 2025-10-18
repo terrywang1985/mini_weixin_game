@@ -429,8 +429,20 @@ class RoomList {
             return;
         }
         
-        // 发送加入房间请求
-        this.networkManager.joinRoom(room.id);
+        // 使用Promise等待服务器响应
+        this.networkManager.joinRoom(room.id)
+            .then(success => {
+                if (success) {
+                    console.log("[RoomList] 房间加入成功，已自动切换到等待房间");
+                } else {
+                    console.log("[RoomList] 房间加入失败");
+                    // 失败处理已在 handleRoomJoinFailed 中
+                }
+            })
+            .catch(error => {
+                console.error("[RoomList] 加入房间异常:", error);
+                this.showMessage("加入房间失败: " + error.message);
+            });
     }
     
     showMessage(message) {

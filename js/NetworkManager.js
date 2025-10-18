@@ -446,6 +446,32 @@ class NetworkManager {
         console.log("创建房间:", roomName);
         const finalPacket = this.protobuf.createCreateRoomRequest(roomName);
         this.sendWebSocketMessage(finalPacket);
+        
+        // 返回Promise,等待服务器响应
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                this.off('room_created', onSuccess);
+                this.off('room_create_failed', onFailed);
+                reject(new Error('创建房间超时'));
+            }, 10000);
+            
+            const onSuccess = (room) => {
+                clearTimeout(timeout);
+                this.off('room_created', onSuccess);
+                this.off('room_create_failed', onFailed);
+                resolve(room);
+            };
+            
+            const onFailed = (error) => {
+                clearTimeout(timeout);
+                this.off('room_created', onSuccess);
+                this.off('room_create_failed', onFailed);
+                reject(error);
+            };
+            
+            this.once('room_created', onSuccess);
+            this.once('room_create_failed', onFailed);
+        });
     }
     
     // 加入房间
@@ -454,6 +480,32 @@ class NetworkManager {
         this.currentRoomId = roomId;
         const finalPacket = this.protobuf.createJoinRoomRequest(roomId);
         this.sendWebSocketMessage(finalPacket);
+        
+        // 返回Promise,等待服务器响应
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                this.off('room_joined', onSuccess);
+                this.off('room_join_failed', onFailed);
+                reject(new Error('加入房间超时'));
+            }, 10000);
+            
+            const onSuccess = () => {
+                clearTimeout(timeout);
+                this.off('room_joined', onSuccess);
+                this.off('room_join_failed', onFailed);
+                resolve(true);
+            };
+            
+            const onFailed = (error) => {
+                clearTimeout(timeout);
+                this.off('room_joined', onSuccess);
+                this.off('room_join_failed', onFailed);
+                resolve(false); // 返回false而不是reject,让调用者决定如何处理
+            };
+            
+            this.once('room_joined', onSuccess);
+            this.once('room_join_failed', onFailed);
+        });
     }
     
     // 发送准备状态：明确发送目标状态（幂等）。
@@ -909,7 +961,14 @@ class NetworkManager {
             this.emit('room_created', response.room);
             console.log("房间创建成功:", response.room.name);
         } else {
-            console.error("创建房间失败");
+            const errorMsg = ErrorMessageHandler.getUserFriendlyMessage(response.ret);
+            console.error("创建房间错误码:", response.ret);
+            console.error("创建房间失败:", errorMsg);
+            
+            this.emit('room_create_failed', {
+                errorCode: response.ret,
+                errorMessage: errorMsg
+            });
         }
     }
     
@@ -1169,13 +1228,14 @@ class NetworkManager {
         console.log("[NetworkManager] 匹配结果通知:", notification);
         
         if (notification.ret === 0 && notification.room) {
-            // 匹配成功
+            // 匹配成功,服务器已经创建好房间并把玩家加入了
             console.log("[NetworkManager] 匹配成功，房间:", notification.room.room?.id);
             
-            // 更新当前房间信息
+            // 更新当前房间信息并切换到房间状态
             if (notification.room.room) {
                 this.currentRoomId = notification.room.room.id;
-                GameStateManager.setCurrentRoom(notification.room.room);
+                // 使用 joinRoom 而不是 setCurrentRoom,这样会自动切换到 IN_ROOM 状态
+                GameStateManager.joinRoom(notification.room.room);
             }
             
             if (notification.room.players) {

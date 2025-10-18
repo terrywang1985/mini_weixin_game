@@ -98,7 +98,13 @@ func (s *OptimizedMatchServer) createMatchRoom(players []*pb.MatchRpcRequest) {
 	// 构建创建房间请求
 	var playerDataList []*pb.PlayerInitData
 	for _, player := range players {
-		playerDataList = append(playerDataList, player.PlayerData)
+		// 使用 player_id 创建 PlayerInitData
+		playerData := &pb.PlayerInitData{
+			PlayerId:   player.PlayerId,
+			PlayerName: player.PlayerData.GetPlayerName(), // 如果有名字就用，否则为空
+		}
+		playerDataList = append(playerDataList, playerData)
+		slog.Info("Adding player to match room request", "player_id", player.PlayerId, "player_name", playerData.PlayerName)
 	}
 
 	roomClient := pb.NewRoomRpcServiceClient(s.roomConn)
