@@ -6,7 +6,7 @@ echo ================================
 
 REM Stop all related processes
 echo.
-echo [1/3] Stopping Login Server...
+echo [1/4] Stopping Login Server...
 taskkill /f /im login-server.exe 2>nul
 if %errorlevel% equ 0 (
     echo OK: Login Server stopped
@@ -15,7 +15,7 @@ if %errorlevel% equ 0 (
 )
 
 echo.
-echo [2/3] Stopping Game Server...
+echo [2/4] Stopping Game Server...
 taskkill /f /im game-server.exe 2>nul
 if %errorlevel% equ 0 (
     echo OK: Game Server stopped
@@ -24,12 +24,21 @@ if %errorlevel% equ 0 (
 )
 
 echo.
-echo [3/3] Stopping Battle Server...
+echo [3/4] Stopping Battle Server...
 taskkill /f /im battle-server.exe 2>nul
 if %errorlevel% equ 0 (
     echo OK: Battle Server stopped
 ) else (
     echo Info: Battle Server not running
+)
+
+echo.
+echo [4/4] Stopping Match Server...
+taskkill /f /im match-server.exe 2>nul
+if %errorlevel% equ 0 (
+    echo OK: Match Server stopped
+) else (
+    echo Info: Match Server not running
 )
 
 echo.

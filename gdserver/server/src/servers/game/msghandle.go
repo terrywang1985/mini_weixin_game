@@ -52,6 +52,8 @@ func InitMessageHandlers() {
 
 	MsgHandler.RegisterHandler(pb.MessageId_GAME_ACTION_REQUEST, (*Player).HandlePlayerActionRequest)
 
+	MsgHandler.RegisterHandler(pb.MessageId_MATCH_REQUEST, (*Player).HandleMatchRequest)
+
 }
 
 func init() {

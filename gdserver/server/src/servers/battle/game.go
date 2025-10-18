@@ -695,7 +695,7 @@ func (g *WordCardGame) updateWinCount() {
 	// 找到分数最高的玩家或手牌用完的玩家
 	var winner *Player
 	maxScore := -1
-	
+
 	// 首先检查是否有玩家手牌为空（完成游戏）
 	for _, p := range g.Players {
 		if len(p.Hand) == 0 {
@@ -704,7 +704,7 @@ func (g *WordCardGame) updateWinCount() {
 			break
 		}
 	}
-	
+
 	// 如果没有玩家打完所有牌，则选择分数最高的
 	if winner == nil {
 		for _, p := range g.Players {
@@ -717,7 +717,7 @@ func (g *WordCardGame) updateWinCount() {
 			log.Printf("[Battle] Player %d wins with highest score: %d", winner.ID, winner.Score)
 		}
 	}
-	
+
 	// 更新获胜者的胜利次数
 	if winner != nil {
 		winner.WinCount++

@@ -47,11 +47,27 @@ else
     echo "ℹ️ Battle Server 未运行"
 fi
 
+# 停止Match Server
+if [ -f logs/match-server.pid ]; then
+    MATCH_PID=$(cat logs/match-server.pid)
+    echo "🛑 停止 Match Server (PID: $MATCH_PID)..."
+    if kill -0 $MATCH_PID 2>/dev/null; then
+        kill $MATCH_PID
+        echo "✅ Match Server 已停止"
+    else
+        echo "ℹ️ Match Server 未运行"
+    fi
+    rm -f logs/match-server.pid
+else
+    echo "ℹ️ Match Server 未运行"
+fi
+
 # 强制清理残留进程
 echo "🧹 清理残留进程..."
 pkill -f "game-server" 2>/dev/null
 pkill -f "battle-server" 2>/dev/null
 pkill -f "login-server" 2>/dev/null
+pkill -f "match-server" 2>/dev/null
 
 echo ""
 echo "=== 所有服务器已停止 ==="

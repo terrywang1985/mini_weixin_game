@@ -19,13 +19,14 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	RoomRpcService_CreateRoomRpc_FullMethodName   = "/room_service.RoomRpcService/CreateRoomRpc"
-	RoomRpcService_JoinRoomRpc_FullMethodName     = "/room_service.RoomRpcService/JoinRoomRpc"
-	RoomRpcService_LeaveRoomRpc_FullMethodName    = "/room_service.RoomRpcService/LeaveRoomRpc"
-	RoomRpcService_GetReadyRpc_FullMethodName     = "/room_service.RoomRpcService/GetReadyRpc"
-	RoomRpcService_StartGameRpc_FullMethodName    = "/room_service.RoomRpcService/StartGameRpc"
-	RoomRpcService_GetRoomListRpc_FullMethodName  = "/room_service.RoomRpcService/GetRoomListRpc"
-	RoomRpcService_PlayerActionRpc_FullMethodName = "/room_service.RoomRpcService/PlayerActionRpc"
+	RoomRpcService_CreateRoomRpc_FullMethodName      = "/room_service.RoomRpcService/CreateRoomRpc"
+	RoomRpcService_JoinRoomRpc_FullMethodName        = "/room_service.RoomRpcService/JoinRoomRpc"
+	RoomRpcService_LeaveRoomRpc_FullMethodName       = "/room_service.RoomRpcService/LeaveRoomRpc"
+	RoomRpcService_GetReadyRpc_FullMethodName        = "/room_service.RoomRpcService/GetReadyRpc"
+	RoomRpcService_StartGameRpc_FullMethodName       = "/room_service.RoomRpcService/StartGameRpc"
+	RoomRpcService_GetRoomListRpc_FullMethodName     = "/room_service.RoomRpcService/GetRoomListRpc"
+	RoomRpcService_PlayerActionRpc_FullMethodName    = "/room_service.RoomRpcService/PlayerActionRpc"
+	RoomRpcService_MatchCreateRoomRpc_FullMethodName = "/room_service.RoomRpcService/MatchCreateRoomRpc"
 )
 
 // RoomRpcServiceClient is the client API for RoomRpcService service.
@@ -42,6 +43,8 @@ type RoomRpcServiceClient interface {
 	// 使用流式 RPC 处理玩家操作
 	// rpc PlayerActionRpc(stream PlayerActionRpcRequest) returns (stream PlayerActionRpcResponse);
 	PlayerActionRpc(ctx context.Context, in *PlayerActionRpcRequest, opts ...grpc.CallOption) (*PlayerActionRpcResponse, error)
+	// 匹配创建房间
+	MatchCreateRoomRpc(ctx context.Context, in *MatchCreateRoomRpcRequest, opts ...grpc.CallOption) (*MatchCreateRoomRpcResponse, error)
 }
 
 type roomRpcServiceClient struct {
@@ -122,6 +125,16 @@ func (c *roomRpcServiceClient) PlayerActionRpc(ctx context.Context, in *PlayerAc
 	return out, nil
 }
 
+func (c *roomRpcServiceClient) MatchCreateRoomRpc(ctx context.Context, in *MatchCreateRoomRpcRequest, opts ...grpc.CallOption) (*MatchCreateRoomRpcResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MatchCreateRoomRpcResponse)
+	err := c.cc.Invoke(ctx, RoomRpcService_MatchCreateRoomRpc_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // RoomRpcServiceServer is the server API for RoomRpcService service.
 // All implementations must embed UnimplementedRoomRpcServiceServer
 // for forward compatibility.
@@ -136,6 +149,8 @@ type RoomRpcServiceServer interface {
 	// 使用流式 RPC 处理玩家操作
 	// rpc PlayerActionRpc(stream PlayerActionRpcRequest) returns (stream PlayerActionRpcResponse);
 	PlayerActionRpc(context.Context, *PlayerActionRpcRequest) (*PlayerActionRpcResponse, error)
+	// 匹配创建房间
+	MatchCreateRoomRpc(context.Context, *MatchCreateRoomRpcRequest) (*MatchCreateRoomRpcResponse, error)
 	mustEmbedUnimplementedRoomRpcServiceServer()
 }
 
@@ -166,6 +181,9 @@ func (UnimplementedRoomRpcServiceServer) GetRoomListRpc(context.Context, *GetRoo
 }
 func (UnimplementedRoomRpcServiceServer) PlayerActionRpc(context.Context, *PlayerActionRpcRequest) (*PlayerActionRpcResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PlayerActionRpc not implemented")
+}
+func (UnimplementedRoomRpcServiceServer) MatchCreateRoomRpc(context.Context, *MatchCreateRoomRpcRequest) (*MatchCreateRoomRpcResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MatchCreateRoomRpc not implemented")
 }
 func (UnimplementedRoomRpcServiceServer) mustEmbedUnimplementedRoomRpcServiceServer() {}
 func (UnimplementedRoomRpcServiceServer) testEmbeddedByValue()                        {}
@@ -314,6 +332,24 @@ func _RoomRpcService_PlayerActionRpc_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _RoomRpcService_MatchCreateRoomRpc_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MatchCreateRoomRpcRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RoomRpcServiceServer).MatchCreateRoomRpc(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RoomRpcService_MatchCreateRoomRpc_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RoomRpcServiceServer).MatchCreateRoomRpc(ctx, req.(*MatchCreateRoomRpcRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // RoomRpcService_ServiceDesc is the grpc.ServiceDesc for RoomRpcService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -348,6 +384,10 @@ var RoomRpcService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PlayerActionRpc",
 			Handler:    _RoomRpcService_PlayerActionRpc_Handler,
+		},
+		{
+			MethodName: "MatchCreateRoomRpc",
+			Handler:    _RoomRpcService_MatchCreateRoomRpc_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

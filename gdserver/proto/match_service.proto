@@ -1,0 +1,29 @@
+syntax = "proto3";
+package match;
+
+// import "battle.proto";
+import "game.proto";
+
+option go_package = "server/src/proto";
+
+
+message MatchRpcRequest {
+  uint64 player_id = 1;
+  game.PlayerInitData player_data = 2;  // 玩家初始数据（卡组/位置等）
+}
+
+// 匹配响应
+message MatchRpcResponse {
+  game.ErrorCode ret = 1;
+}
+
+message CancelMatchRequest {
+  uint64 player_id = 1;
+}
+
+
+// 匹配服务
+service MatchService {
+  rpc StartMatch(MatchRpcRequest) returns (MatchRpcResponse);
+  rpc CancelMatch(CancelMatchRequest) returns (MatchRpcResponse);
+}

@@ -43,15 +43,16 @@ if %errorlevel% neq 0 (
 )
 cd ..\..\..
 
-REM Copy required data files
+
 echo.
-echo [4/4] Copying data files...
-copy src\servers\battle\word_cards.json bin\word_cards.json > nul
+echo [4/4] Building Match Server...
+cd src\servers\match
+go build -o ..\..\..\bin\match-server.exe .
 if %errorlevel% neq 0 (
-    echo Warning: Failed to copy word_cards.json
-) else (
-    echo OK: Copied word_cards.json to bin\
+    echo Error: Match Server build failed
+    exit /b 1
 )
+cd ..\..\..
 
 echo.
 echo ================================

@@ -2,13 +2,13 @@
 
 # 参数化启动脚本
 # 用法: ./start.sh [service_name] 或 ./start.sh all
-# service_name: login, game, battle
+# service_name: login, game, battle, match
 
 SERVICE_NAME="$1"
 
 if [ -z "$SERVICE_NAME" ]; then
     echo "用法: $0 [service_name|all]"
-    echo "service_name: login, game, battle"
+    echo "service_name: login, game, battle, match"
     echo "例如: $0 game  # 启动游戏服务器"
     echo "例如: $0 all   # 启动所有服务器"
     exit 1
@@ -85,17 +85,25 @@ case "$SERVICE_NAME" in
         ;;
     "battle")
         if [ -f /.dockerenv ]; then
-            start_service_foreground "battle" "Battle Server" "gRPC: localhost:50053"
+            start_service_foreground "battle" "Battle Server" "gRPC: localhost:8693"
         else
-            start_service "battle" "Battle Server" "gRPC: localhost:50053"
+            start_service "battle" "Battle Server" "gRPC: localhost:8693"
+        fi
+        ;;
+    "match")
+        if [ -f /.dockerenv ]; then
+            start_service_foreground "match" "Match Server" "gRPC: localhost:50052"
+        else
+            start_service "match" "Match Server" "gRPC: localhost:50052"
         fi
         ;;
     "all")
         echo "=== 启动所有 jigger_protobuf 服务器 ==="
         
         start_service "login" "Login Server" "http://localhost:8081"
-        start_service "game" "Game Server" "WebSocket: ws://localhost:18080/ws, TCP: localhost:12345, gRPC: localhost:50051"
-        start_service "battle" "Battle Server" "gRPC: localhost:50053"
+        start_service "game" "Game Server" "WebSocket: ws://localhost:18080/ws, TCP: localhost:12345, gRPC: localhost:8691"
+        start_service "battle" "Battle Server" "gRPC: localhost:8693"
+        start_service "match" "Match Server" "gRPC: localhost:50052"
         
         echo ""
         echo "=== 所有服务器启动完成 ==="
@@ -105,7 +113,7 @@ case "$SERVICE_NAME" in
         ;;
     *)
         echo "❌ 未知的服务名称: $SERVICE_NAME"
-        echo "支持的服务: login, game, battle, all"
+        echo "支持的服务: login, game, battle, match, all"
         exit 1
         ;;
 esac

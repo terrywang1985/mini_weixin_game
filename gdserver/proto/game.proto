@@ -188,7 +188,11 @@ message MatchRequest {
 message MatchResponse {
   ErrorCode ret = 1;
   string battle_id = 2;
-  string battle_server_addr = 3;
+}
+
+message MatchResultNotify {
+  int32 ret = 1;                     // 错误码
+  RoomDetail room = 2;               // 房间详情
 }
 
 
@@ -255,6 +259,10 @@ enum MessageId {
   GAME_START_NOTIFICATION = 23; //游戏开始通知
   GAME_END_NOTIFICATION = 24; //游戏结束通知
 
+  MATCH_REQUEST = 26;
+  MATCH_RESPONSE = 27;
+
+  MATCH_RESULT_NOTIFY = 28; //匹配结果通知
 
 }
 

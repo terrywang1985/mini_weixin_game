@@ -25,10 +25,18 @@ message GameEndNotify {
   battle.GameEndNotification game_end = 2;
 }
 
+// 匹配结果通知请求
+message MatchResultNotifyRequest {
+  uint64 be_notified_uid = 1; // 被通知的用户ID
+  game.MatchResultNotify match_result = 2;
+}
+
+
 service GameRpcService {
   rpc RoomStatusNotifyRpc(RoomDetailNotify) returns (battle.NotifyResponse);
   rpc GameStateNotifyRpc(battle.GameStateNotify) returns (battle.NotifyResponse);
   rpc PlayerActionNotifyRpc(battle.PlayerActionNotify) returns (battle.NotifyResponse);
   rpc GameStartNotifyRpc(GameStartNotify) returns (battle.NotifyResponse);
   rpc GameEndNotifyRpc(GameEndNotify) returns (battle.NotifyResponse);
+  rpc MatchResultNotifyRpc(MatchResultNotifyRequest) returns (battle.NotifyResponse);
 }

@@ -38,6 +38,15 @@ if [ $? -ne 0 ]; then
 fi
 cd ../../..
 
+echo "🔨 构建 Match Server..."
+cd src/servers/match
+go build -o ../../../bin/match-server .
+if [ $? -ne 0 ]; then
+    echo "❌ Match Server 构建失败"
+    exit 1
+fi
+cd ../../..
+
 echo "✅ 所有服务器构建完成！"
 
 echo ""

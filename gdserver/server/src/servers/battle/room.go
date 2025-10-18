@@ -404,7 +404,7 @@ func (room *BattleRoom) EndGame() {
 	if room.Game != nil {
 		// 在重置游戏前，同步胜利次数到房间玩家信息
 		room.syncWinCountFromGame()
-		
+
 		room.Game.EndGame()
 		room.Game = nil
 	}
@@ -729,23 +729,23 @@ func (room *BattleRoom) syncWinCountFromGame() {
 	if room.Game == nil {
 		return
 	}
-	
+
 	// 使用类型断言获取WordCardGame实例
 	wordCardGame, ok := room.Game.(*WordCardGame)
 	if !ok {
 		slog.Warn("Game is not WordCardGame type", "room_id", room.BattleID)
 		return
 	}
-	
+
 	room.PlayersMutex.Lock()
 	defer room.PlayersMutex.Unlock()
-	
+
 	// 同步每个玩家的胜利次数
 	for _, gamePlayer := range wordCardGame.Players {
 		if roomPlayer, exists := room.Players[gamePlayer.ID]; exists {
 			roomPlayer.WinCount = gamePlayer.WinCount
-			slog.Info("Synced win count for player", 
-				"player_id", gamePlayer.ID, 
+			slog.Info("Synced win count for player",
+				"player_id", gamePlayer.ID,
 				"win_count", gamePlayer.WinCount,
 				"room_id", room.BattleID)
 		}

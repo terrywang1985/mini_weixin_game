@@ -1,14 +1,22 @@
 package main
 
 import (
+	"common/redisutil"
+	"fmt"
 	"log/slog"
 	"net"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"google.golang.org/grpc"
 	pb "proto"
+
+	"google.golang.org/grpc"
+)
+
+// 全局变量
+var (
+	GlobalRedis *redisutil.RedisPool
 )
 
 func main() {
@@ -18,16 +26,17 @@ func main() {
 	}))
 	slog.SetDefault(logger)
 
-	// 创建MatchServer
-	redisAddr := os.Getenv("REDIS_ADDR")
-	if redisAddr == "" {
-		redisAddr = "localhost:6379"
+	// 初始化Redis连接池
+	redisConfig := redisutil.LoadRedisConfigFromEnv()
+	GlobalRedis = redisutil.NewRedisPoolFromConfig(redisConfig)
+
+	// 测试Redis连接
+	if err := testRedisConnection(); err != nil {
+		slog.Error("Failed to connect to Redis", "error", err)
+		os.Exit(1)
 	}
-	
-	// 初始化全局Redis池
-	initGlobalRedisPool(redisAddr)
-	
-	matchServer := NewOptimizedMatchServer(redisAddr)
+
+	matchServer := NewOptimizedMatchServer()
 
 	// 启动gRPC服务器
 	lis, err := net.Listen("tcp", ":50052")
@@ -53,4 +62,14 @@ func main() {
 		slog.Error("failed to serve", "error", err)
 		os.Exit(1)
 	}
+}
+
+// 测试Redis连接
+func testRedisConnection() error {
+	// 使用Exists命令测试连接
+	_, err := GlobalRedis.Exists("test_connection")
+	if err != nil {
+		return fmt.Errorf("redis connection failed: %v", err)
+	}
+	return nil
 }

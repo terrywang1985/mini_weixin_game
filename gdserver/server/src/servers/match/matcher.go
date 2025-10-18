@@ -7,8 +7,9 @@ import (
 	"time"
 )
 
+// backgroundMatcher 后台匹配处理器
 func (s *OptimizedMatchServer) backgroundMatcher() {
-	ticker := time.NewTicker(100 * time.Millisecond) // 每100毫秒匹配一次
+	ticker := time.NewTicker(MatchCheckPeriod)
 	defer ticker.Stop()
 
 	for range ticker.C {
@@ -16,99 +17,184 @@ func (s *OptimizedMatchServer) backgroundMatcher() {
 	}
 }
 
+// tryMatch 尝试匹配玩家
 func (s *OptimizedMatchServer) tryMatch() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
-	// 检查超时（5分钟）
+	// 检查超时的玩家 (30秒)
 	now := time.Now()
+	var timeoutPlayers []uint64
+
 	for playerID, lastTime := range s.lastActivity {
-		if now.Sub(lastTime) > 5*time.Minute {
+		if now.Sub(lastTime) > MatchTimeout {
+			timeoutPlayers = append(timeoutPlayers, playerID)
+		}
+	}
+
+	// 释放锁后处理超时通知
+	s.mu.Unlock()
+
+	// 通知超时的玩家
+	for _, playerID := range timeoutPlayers {
+		s.mu.Lock()
+		// 双重检查，确保玩家还在队列中
+		if _, exists := s.matchQueue[playerID]; exists {
 			delete(s.matchQueue, playerID)
 			delete(s.lastActivity, playerID)
+			s.mu.Unlock()
+
+			slog.Info("Player match timeout", "player_id", playerID)
+			// 通知客户端匹配失败
+			go s.notifyMatchFailed(playerID, "匹配超时")
+		} else {
+			s.mu.Unlock()
 		}
 	}
 
-	// 简单匹配：凑够2人就开房
-	var matchedPlayers []*pb.MatchRequest
-	for playerID, req := range s.matchQueue {
+	// 尝试匹配
+	s.mu.Lock()
+	var matchedPlayers []*pb.MatchRpcRequest
+
+	for _, req := range s.matchQueue {
 		matchedPlayers = append(matchedPlayers, req)
-		delete(s.matchQueue, playerID)
-		delete(s.lastActivity, playerID)
 
-		// 凑够2人
+		// 凑够2人就匹配
 		if len(matchedPlayers) == 2 {
-			// 创建房间
-			go s.createBattleRoom(matchedPlayers)
-			matchedPlayers = nil // 清空，继续匹配
+			// 从队列中移除这些玩家
+			for _, player := range matchedPlayers {
+				delete(s.matchQueue, player.PlayerId)
+				delete(s.lastActivity, player.PlayerId)
+			}
+
+			slog.Info("Found match for 2 players",
+				"player1", matchedPlayers[0].PlayerId,
+				"player2", matchedPlayers[1].PlayerId)
+
+			// 异步创建房间
+			players := make([]*pb.MatchRpcRequest, len(matchedPlayers))
+			copy(players, matchedPlayers)
+			go s.createMatchRoom(players)
+
+			matchedPlayers = nil // 清空，继续匹配下一组
 		}
 	}
 
-	// 如果匹配后还有剩余玩家，放回队列（但上面是循环整个队列，所以这里不需要放回）
+	s.mu.Unlock()
 }
 
-func (s *OptimizedMatchServer) createBattleRoom(players []*pb.MatchRequest) {
-	// 调用BattleCommandService的CreateRoom
-	// 这里需要实现gRPC调用
-
-	// 假设我们有一个battleCommandClient
-	// 创建房间请求
-	roomReq := &pb.CreateRoomRequest{
-		BattleId: GenerateBattleID(), // 使用全局函数生成唯一战斗ID
-		Players:  make([]*pb.PlayerInitData, 0, len(players)),
+// createMatchRoom 创建匹配房间
+func (s *OptimizedMatchServer) createMatchRoom(players []*pb.MatchRpcRequest) {
+	if s.roomConn == nil {
+		slog.Error("Room server connection not available")
+		// 通知所有玩家匹配失败
+		for _, player := range players {
+			s.notifyMatchFailed(player.PlayerId, "服务器连接失败")
+		}
+		return
 	}
 
-	for _, playerReq := range players {
-		roomReq.Players = append(roomReq.Players, playerReq.PlayerData)
+	slog.Info("Creating match room", "players", len(players))
+
+	// 构建创建房间请求
+	var playerDataList []*pb.PlayerInitData
+	for _, player := range players {
+		playerDataList = append(playerDataList, player.PlayerData)
 	}
 
-	// 设置战场（这里简化，实际应该从配置中获取）
-	roomReq.Battlefield = &pb.Battlefield{
-		Width:       1000,
-		Height:      1000,
-		Player1Base: &pb.Position{X: 100, Y: 500},
-		Player2Base: &pb.Position{X: 900, Y: 500},
-		BaseRadius:  50,
-	}
-
-	// 调用BattleCommandService
-	// 注意：这里需要处理错误和重试
+	roomClient := pb.NewRoomRpcServiceClient(s.roomConn)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// TODO: 实现实际的battle服务调用
-	// resp, err := battleCommandClient.CreateRoom(ctx, roomReq)
-	// 目前暂时模拟成功
-	slog.Info("would create battle room", "battle_id", roomReq.BattleId, "players", len(roomReq.Players))
+	// 调用 Room Server 创建匹配房间
+	resp, err := roomClient.MatchCreateRoomRpc(ctx, &pb.MatchCreateRoomRpcRequest{
+		Player: playerDataList,
+	})
 
-	// 模拟成功响应
-	for _, playerReq := range players {
-		s.notifyPlayerMatched(playerReq.PlayerId, roomReq.BattleId)
+	if err != nil {
+		slog.Error("Failed to create match room via RPC", "error", err)
+		// 通知所有玩家匹配失败
+		for _, player := range players {
+			s.notifyMatchFailed(player.PlayerId, "创建房间失败")
+		}
+		return
+	}
+
+	if resp.Ret != pb.ErrorCode_OK {
+		slog.Error("Create match room failed", "error_code", resp.Ret)
+		// 通知所有玩家匹配失败
+		for _, player := range players {
+			s.notifyMatchFailed(player.PlayerId, "创建房间失败")
+		}
+		return
+	}
+
+	slog.Info("Match room created successfully",
+		"room_id", resp.Room.Room.Id,
+		"players", len(players))
+
+	// 通知所有玩家匹配成功
+	for _, player := range players {
+		s.notifyMatchSuccess(player.PlayerId, resp.Room)
 	}
 }
 
-func (s *OptimizedMatchServer) notifyPlayerMatched(playerID uint64, battleID string) {
-	// 这里需要将匹配结果通知到GameServer，由GameServer通知玩家
-	// 我们可以通过gRPC调用GameServer的接口，或者通过消息队列
-	// 由于您现有的架构中，GameServer和MatchServer都是gRPC服务，这里直接调用GameServer的接口
+// notifyMatchSuccess 通知玩家匹配成功
+func (s *OptimizedMatchServer) notifyMatchSuccess(playerID uint64, room *pb.RoomDetail) {
+	if s.gameConn == nil {
+		slog.Error("Game server connection not available", "player_id", playerID)
+		return
+	}
 
-	// TODO: 实现实际的game服务通知
-	slog.Info("would notify player matched", "player_id", playerID, "battle_id", battleID)
+	gameClient := pb.NewGameRpcServiceClient(s.gameConn)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
 
-	// 模拟通知逻辑
-	/*
-		notifyReq := &pb.MatchResultNotify{
-			PlayerId:   playerID,
-			BattleId:   battleID,
-			ServerAddr: "battle-server-address:50051", // 战斗服务器地址
-		}
+	// 通知 Game Server，由它推送给客户端
+	notify := &pb.MatchResultNotifyRequest{
+		BeNotifiedUid: playerID,
+		MatchResult: &pb.MatchResultNotify{
+			Ret:  int32(pb.ErrorCode_OK),
+			Room: room,
+		},
+	}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+	_, err := gameClient.MatchResultNotifyRpc(ctx, notify)
+	if err != nil {
+		slog.Error("Failed to notify player match success", "player_id", playerID, "error", err)
+	} else {
+		slog.Info("Notified player match success", "player_id", playerID, "room_id", room.Room.Id)
+	}
+}
 
-		_, err := gameServerClient.OnMatchSuccess(ctx, notifyReq)
-		if err != nil {
-			slog.Error("failed to notify player", "player_id", playerID, "error", err)
-		}
-	*/
+// notifyMatchFailed 通知玩家匹配失败
+func (s *OptimizedMatchServer) notifyMatchFailed(playerID uint64, reason string) {
+	if s.gameConn == nil {
+		slog.Error("Game server connection not available", "player_id", playerID)
+		return
+	}
+
+	gameClient := pb.NewGameRpcServiceClient(s.gameConn)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	// 通知 Game Server 匹配失败
+	notify := &pb.MatchResultNotifyRequest{
+		BeNotifiedUid: playerID,
+		MatchResult: &pb.MatchResultNotify{
+			Ret:  int32(pb.ErrorCode_TIMEOUT),
+			Room: nil,
+		},
+	}
+
+	_, err := gameClient.MatchResultNotifyRpc(ctx, notify)
+	if err != nil {
+		slog.Error("Failed to notify player match failed",
+			"player_id", playerID,
+			"reason", reason,
+			"error", err)
+	} else {
+		slog.Info("Notified player match failed",
+			"player_id", playerID,
+			"reason", reason)
+	}
 }

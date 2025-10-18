@@ -17,6 +17,17 @@ message CreateRoomRpcResponse {
   game.RoomDetail room = 2;
 }
 
+// 匹配创建房间请求i
+message MatchCreateRoomRpcRequest {
+  repeated game.PlayerInitData player = 1;
+}
+
+// 匹配创建房间响应
+message MatchCreateRoomRpcResponse {
+  game.ErrorCode ret = 1;
+  game.RoomDetail room = 2;
+}
+
 message JoinRoomRpcRequest {
   string room_id = 1;
   game.PlayerInitData player = 2;
@@ -89,4 +100,8 @@ service RoomRpcService {
   // 使用流式 RPC 处理玩家操作
   //rpc PlayerActionRpc(stream PlayerActionRpcRequest) returns (stream PlayerActionRpcResponse);
   rpc PlayerActionRpc(PlayerActionRpcRequest) returns (PlayerActionRpcResponse);
+
+  // 匹配创建房间
+  rpc MatchCreateRoomRpc(MatchCreateRoomRpcRequest) returns (MatchCreateRoomRpcResponse);
+
 }

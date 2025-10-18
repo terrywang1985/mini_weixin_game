@@ -181,6 +181,60 @@ func (x *GameEndNotify) GetGameEnd() *GameEndNotification {
 	return nil
 }
 
+// 匹配结果通知请求
+type MatchResultNotifyRequest struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	BeNotifiedUid uint64             `protobuf:"varint,1,opt,name=be_notified_uid,json=beNotifiedUid,proto3" json:"be_notified_uid,omitempty"` // 被通知的用户ID
+	MatchResult   *MatchResultNotify `protobuf:"bytes,2,opt,name=match_result,json=matchResult,proto3" json:"match_result,omitempty"`
+}
+
+func (x *MatchResultNotifyRequest) Reset() {
+	*x = MatchResultNotifyRequest{}
+	mi := &file_game_service_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MatchResultNotifyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MatchResultNotifyRequest) ProtoMessage() {}
+
+func (x *MatchResultNotifyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_game_service_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MatchResultNotifyRequest.ProtoReflect.Descriptor instead.
+func (*MatchResultNotifyRequest) Descriptor() ([]byte, []int) {
+	return file_game_service_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *MatchResultNotifyRequest) GetBeNotifiedUid() uint64 {
+	if x != nil {
+		return x.BeNotifiedUid
+	}
+	return 0
+}
+
+func (x *MatchResultNotifyRequest) GetMatchResult() *MatchResultNotify {
+	if x != nil {
+		return x.MatchResult
+	}
+	return nil
+}
+
 var File_game_service_proto protoreflect.FileDescriptor
 
 var file_game_service_proto_rawDesc = []byte{
@@ -208,7 +262,15 @@ var file_game_service_proto_rawDesc = []byte{
 	0x0a, 0x08, 0x67, 0x61, 0x6d, 0x65, 0x5f, 0x65, 0x6e, 0x64, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b,
 	0x32, 0x1b, 0x2e, 0x62, 0x61, 0x74, 0x74, 0x6c, 0x65, 0x2e, 0x47, 0x61, 0x6d, 0x65, 0x45, 0x6e,
 	0x64, 0x4e, 0x6f, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x07, 0x67,
-	0x61, 0x6d, 0x65, 0x45, 0x6e, 0x64, 0x32, 0x89, 0x03, 0x0a, 0x0e, 0x47, 0x61, 0x6d, 0x65, 0x52,
+	0x61, 0x6d, 0x65, 0x45, 0x6e, 0x64, 0x22, 0x7e, 0x0a, 0x18, 0x4d, 0x61, 0x74, 0x63, 0x68, 0x52,
+	0x65, 0x73, 0x75, 0x6c, 0x74, 0x4e, 0x6f, 0x74, 0x69, 0x66, 0x79, 0x52, 0x65, 0x71, 0x75, 0x65,
+	0x73, 0x74, 0x12, 0x26, 0x0a, 0x0f, 0x62, 0x65, 0x5f, 0x6e, 0x6f, 0x74, 0x69, 0x66, 0x69, 0x65,
+	0x64, 0x5f, 0x75, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x04, 0x52, 0x0d, 0x62, 0x65, 0x4e,
+	0x6f, 0x74, 0x69, 0x66, 0x69, 0x65, 0x64, 0x55, 0x69, 0x64, 0x12, 0x3a, 0x0a, 0x0c, 0x6d, 0x61,
+	0x74, 0x63, 0x68, 0x5f, 0x72, 0x65, 0x73, 0x75, 0x6c, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b,
+	0x32, 0x17, 0x2e, 0x67, 0x61, 0x6d, 0x65, 0x2e, 0x4d, 0x61, 0x74, 0x63, 0x68, 0x52, 0x65, 0x73,
+	0x75, 0x6c, 0x74, 0x4e, 0x6f, 0x74, 0x69, 0x66, 0x79, 0x52, 0x0b, 0x6d, 0x61, 0x74, 0x63, 0x68,
+	0x52, 0x65, 0x73, 0x75, 0x6c, 0x74, 0x32, 0xe1, 0x03, 0x0a, 0x0e, 0x47, 0x61, 0x6d, 0x65, 0x52,
 	0x70, 0x63, 0x53, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x12, 0x4d, 0x0a, 0x13, 0x52, 0x6f, 0x6f,
 	0x6d, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x4e, 0x6f, 0x74, 0x69, 0x66, 0x79, 0x52, 0x70, 0x63,
 	0x12, 0x1e, 0x2e, 0x67, 0x61, 0x6d, 0x65, 0x5f, 0x73, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x2e,
@@ -233,8 +295,14 @@ var file_game_service_proto_rawDesc = []byte{
 	0x67, 0x61, 0x6d, 0x65, 0x5f, 0x73, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x2e, 0x47, 0x61, 0x6d,
 	0x65, 0x45, 0x6e, 0x64, 0x4e, 0x6f, 0x74, 0x69, 0x66, 0x79, 0x1a, 0x16, 0x2e, 0x62, 0x61, 0x74,
 	0x74, 0x6c, 0x65, 0x2e, 0x4e, 0x6f, 0x74, 0x69, 0x66, 0x79, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e,
-	0x73, 0x65, 0x42, 0x12, 0x5a, 0x10, 0x73, 0x65, 0x72, 0x76, 0x65, 0x72, 0x2f, 0x73, 0x72, 0x63,
-	0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x73, 0x65, 0x12, 0x56, 0x0a, 0x14, 0x4d, 0x61, 0x74, 0x63, 0x68, 0x52, 0x65, 0x73, 0x75, 0x6c,
+	0x74, 0x4e, 0x6f, 0x74, 0x69, 0x66, 0x79, 0x52, 0x70, 0x63, 0x12, 0x26, 0x2e, 0x67, 0x61, 0x6d,
+	0x65, 0x5f, 0x73, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x2e, 0x4d, 0x61, 0x74, 0x63, 0x68, 0x52,
+	0x65, 0x73, 0x75, 0x6c, 0x74, 0x4e, 0x6f, 0x74, 0x69, 0x66, 0x79, 0x52, 0x65, 0x71, 0x75, 0x65,
+	0x73, 0x74, 0x1a, 0x16, 0x2e, 0x62, 0x61, 0x74, 0x74, 0x6c, 0x65, 0x2e, 0x4e, 0x6f, 0x74, 0x69,
+	0x66, 0x79, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x42, 0x12, 0x5a, 0x10, 0x73, 0x65,
+	0x72, 0x76, 0x65, 0x72, 0x2f, 0x73, 0x72, 0x63, 0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x06,
+	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -249,37 +317,42 @@ func file_game_service_proto_rawDescGZIP() []byte {
 	return file_game_service_proto_rawDescData
 }
 
-var file_game_service_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_game_service_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_game_service_proto_goTypes = []any{
-	(*RoomDetailNotify)(nil),      // 0: game_service.RoomDetailNotify
-	(*GameStartNotify)(nil),       // 1: game_service.GameStartNotify
-	(*GameEndNotify)(nil),         // 2: game_service.GameEndNotify
-	(*RoomDetail)(nil),            // 3: game.RoomDetail
-	(*GameStartNotification)(nil), // 4: game.GameStartNotification
-	(*GameEndNotification)(nil),   // 5: battle.GameEndNotification
-	(*GameStateNotify)(nil),       // 6: battle.GameStateNotify
-	(*PlayerActionNotify)(nil),    // 7: battle.PlayerActionNotify
-	(*NotifyResponse)(nil),        // 8: battle.NotifyResponse
+	(*RoomDetailNotify)(nil),         // 0: game_service.RoomDetailNotify
+	(*GameStartNotify)(nil),          // 1: game_service.GameStartNotify
+	(*GameEndNotify)(nil),            // 2: game_service.GameEndNotify
+	(*MatchResultNotifyRequest)(nil), // 3: game_service.MatchResultNotifyRequest
+	(*RoomDetail)(nil),               // 4: game.RoomDetail
+	(*GameStartNotification)(nil),    // 5: game.GameStartNotification
+	(*GameEndNotification)(nil),      // 6: battle.GameEndNotification
+	(*MatchResultNotify)(nil),        // 7: game.MatchResultNotify
+	(*GameStateNotify)(nil),          // 8: battle.GameStateNotify
+	(*PlayerActionNotify)(nil),       // 9: battle.PlayerActionNotify
+	(*NotifyResponse)(nil),           // 10: battle.NotifyResponse
 }
 var file_game_service_proto_depIdxs = []int32{
-	3, // 0: game_service.RoomDetailNotify.room:type_name -> game.RoomDetail
-	4, // 1: game_service.GameStartNotify.game_start:type_name -> game.GameStartNotification
-	5, // 2: game_service.GameEndNotify.game_end:type_name -> battle.GameEndNotification
-	0, // 3: game_service.GameRpcService.RoomStatusNotifyRpc:input_type -> game_service.RoomDetailNotify
-	6, // 4: game_service.GameRpcService.GameStateNotifyRpc:input_type -> battle.GameStateNotify
-	7, // 5: game_service.GameRpcService.PlayerActionNotifyRpc:input_type -> battle.PlayerActionNotify
-	1, // 6: game_service.GameRpcService.GameStartNotifyRpc:input_type -> game_service.GameStartNotify
-	2, // 7: game_service.GameRpcService.GameEndNotifyRpc:input_type -> game_service.GameEndNotify
-	8, // 8: game_service.GameRpcService.RoomStatusNotifyRpc:output_type -> battle.NotifyResponse
-	8, // 9: game_service.GameRpcService.GameStateNotifyRpc:output_type -> battle.NotifyResponse
-	8, // 10: game_service.GameRpcService.PlayerActionNotifyRpc:output_type -> battle.NotifyResponse
-	8, // 11: game_service.GameRpcService.GameStartNotifyRpc:output_type -> battle.NotifyResponse
-	8, // 12: game_service.GameRpcService.GameEndNotifyRpc:output_type -> battle.NotifyResponse
-	8, // [8:13] is the sub-list for method output_type
-	3, // [3:8] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	4,  // 0: game_service.RoomDetailNotify.room:type_name -> game.RoomDetail
+	5,  // 1: game_service.GameStartNotify.game_start:type_name -> game.GameStartNotification
+	6,  // 2: game_service.GameEndNotify.game_end:type_name -> battle.GameEndNotification
+	7,  // 3: game_service.MatchResultNotifyRequest.match_result:type_name -> game.MatchResultNotify
+	0,  // 4: game_service.GameRpcService.RoomStatusNotifyRpc:input_type -> game_service.RoomDetailNotify
+	8,  // 5: game_service.GameRpcService.GameStateNotifyRpc:input_type -> battle.GameStateNotify
+	9,  // 6: game_service.GameRpcService.PlayerActionNotifyRpc:input_type -> battle.PlayerActionNotify
+	1,  // 7: game_service.GameRpcService.GameStartNotifyRpc:input_type -> game_service.GameStartNotify
+	2,  // 8: game_service.GameRpcService.GameEndNotifyRpc:input_type -> game_service.GameEndNotify
+	3,  // 9: game_service.GameRpcService.MatchResultNotifyRpc:input_type -> game_service.MatchResultNotifyRequest
+	10, // 10: game_service.GameRpcService.RoomStatusNotifyRpc:output_type -> battle.NotifyResponse
+	10, // 11: game_service.GameRpcService.GameStateNotifyRpc:output_type -> battle.NotifyResponse
+	10, // 12: game_service.GameRpcService.PlayerActionNotifyRpc:output_type -> battle.NotifyResponse
+	10, // 13: game_service.GameRpcService.GameStartNotifyRpc:output_type -> battle.NotifyResponse
+	10, // 14: game_service.GameRpcService.GameEndNotifyRpc:output_type -> battle.NotifyResponse
+	10, // 15: game_service.GameRpcService.MatchResultNotifyRpc:output_type -> battle.NotifyResponse
+	10, // [10:16] is the sub-list for method output_type
+	4,  // [4:10] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_game_service_proto_init() }
@@ -295,7 +368,7 @@ func file_game_service_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_game_service_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
