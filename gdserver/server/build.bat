@@ -19,6 +19,7 @@ cd src\servers\game
 go build -o ..\..\..\bin\game-server.exe .
 if %errorlevel% neq 0 (
     echo Error: Game Server build failed
+    pause
     exit /b 1
 )
 cd ..\..\..
@@ -29,6 +30,7 @@ cd src\servers\battle
 go build -o ..\..\..\bin\battle-server.exe .
 if %errorlevel% neq 0 (
     echo Error: Battle Server build failed
+    pause
     exit /b 1
 )
 cd ..\..\..
@@ -39,6 +41,7 @@ cd src\servers\login
 go build -o ..\..\..\bin\login-server.exe .\loginserver.go
 if %errorlevel% neq 0 (
     echo Error: Login Server build failed
+    pause
     exit /b 1
 )
 cd ..\..\..
@@ -50,6 +53,7 @@ cd src\servers\match
 go build -o ..\..\..\bin\match-server.exe .
 if %errorlevel% neq 0 (
     echo Error: Match Server build failed
+    pause
     exit /b 1
 )
 cd ..\..\..
@@ -68,3 +72,5 @@ echo Tips:
 echo - Executables are located in the bin\ directory
 echo - Configuration files are in the cfg\ directory
 echo - Make sure to run servers from the server\ directory
+
+pause

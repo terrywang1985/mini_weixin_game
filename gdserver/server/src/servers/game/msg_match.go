@@ -46,13 +46,13 @@ func (p *Player) HandleMatchRequest(msg *pb.Message) {
 	}
 	defer conn.Close()
 
-	client := pb.NewMatchServiceClient(conn)
+	client := pb.NewMatchRpcServiceClient(conn)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	//发送grpc
-	resp, err := client.StartMatch(ctx, &pb.MatchRpcRequest{
+	resp, err := client.StartMatchRpc(ctx, &pb.MatchRpcRequest{
 		PlayerId: p.Uid,
 	})
 	if err != nil {
@@ -95,8 +95,21 @@ func (p *Player) HandleCancelMatchRequest(msg *pb.Message) {
 		grpc.WithBlock(),
 		grpc.WithTimeout(2*time.Second),
 	)
+	if err != nil {
+		log.Printf("连接MatchServer失败: %s, 错误: %v", "127.0.0.1:50052", err)
+		p.SendResponse(msg, mustMarshal(&pb.CancelMatchResponse{
+			Ret: pb.ErrorCode_SERVER_ERROR,
+		}))
+		return
+	}
+	defer conn.Close()
+
+	client := pb.NewMatchRpcServiceClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
 	//发送grpc
-	resp, err := client.CancelMatch(ctx, &pb.CancelMatchRpcRequest{
+	resp, err := client.CancelMatchRpc(ctx, &pb.CancelMatchRpcRequest{
 		PlayerId: p.Uid,
 	})
 	if err != nil {
@@ -113,20 +126,6 @@ func (p *Player) HandleCancelMatchRequest(msg *pb.Message) {
 		}))
 		return
 	}
-
-	if resp.Ret != pb.ErrorCode_OK {
-		slog.Error("玩家取消匹配请求失败，错误码: ", "error_code", resp.Ret)
-	}
-
-	client := pb.NewMatchServiceClient(conn)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	//发送grpc
-	resp, err := client.CancelMatch(ctx, &pb.CancelMatchRpcRequest{
-		PlayerId: p.Uid,
-	})
 
 	if resp.Ret != pb.ErrorCode_OK {
 		slog.Error("玩家取消匹配请求失败，错误码: ", "error_code", resp.Ret)

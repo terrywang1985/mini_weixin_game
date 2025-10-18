@@ -386,6 +386,15 @@ class NetworkManager {
                 case this.protobuf.MESSAGE_IDS.GAME_END_NOTIFICATION:
                     this.handleGameEndNotification(msgData);
                     break;
+                case this.protobuf.MESSAGE_IDS.MATCH_RESPONSE:
+                    this.handleMatchResponse(msgData);
+                    break;
+                case this.protobuf.MESSAGE_IDS.MATCH_RESULT_NOTIFY:
+                    this.handleMatchResultNotify(msgData);
+                    break;
+                case this.protobuf.MESSAGE_IDS.CANCEL_MATCH_RESPONSE:
+                    this.handleCancelMatchResponse(msgData);
+                    break;
                 default:
                     console.log("未知的消息ID:", msgId);
             }
@@ -559,6 +568,37 @@ class NetworkManager {
         console.log("发送准备请求（别名）:", pidStr);
         const finalPacket = this.protobuf.createGetReadyRequest(pidStr);
         this.sendWebSocketMessage(finalPacket);
+    }
+    
+    // ========== 匹配相关方法 ==========
+    
+    // 开始匹配
+    startMatch() {
+        console.log("[NetworkManager] 开始匹配");
+        
+        if (!this.userUid) {
+            console.error("[NetworkManager] 无法开始匹配：用户未登录");
+            this.emit('match_error', { message: '请先登录' });
+            return;
+        }
+        
+        const finalPacket = this.protobuf.createMatchRequest(this.userUid, this.userNickname);
+        this.sendWebSocketMessage(finalPacket);
+        console.log("[NetworkManager] 匹配请求已发送");
+    }
+    
+    // 取消匹配
+    cancelMatch() {
+        console.log("[NetworkManager] 取消匹配");
+        
+        if (!this.userUid) {
+            console.error("[NetworkManager] 无法取消匹配：用户未登录");
+            return;
+        }
+        
+        const finalPacket = this.protobuf.createCancelMatchRequest(this.userUid);
+        this.sendWebSocketMessage(finalPacket);
+        console.log("[NetworkManager] 取消匹配请求已发送");
     }
     
     // 发送WebSocket消息的通用方法
@@ -1082,6 +1122,101 @@ class NetworkManager {
         if (data && data.length > 0) {
             const hexString = Array.from(data).map(b => b.toString(16).padStart(2, '0')).join(' ');
             console.log('游戏动作通知数据 (hex):', hexString);
+        }
+    }
+    
+    // ========== 匹配相关响应处理 ==========
+    
+    // 处理匹配响应
+    handleMatchResponse(data) {
+        console.log("[NetworkManager] 处理匹配响应");
+        const response = this.protobuf.parseMatchResponse(data);
+        
+        if (!response) {
+            console.error("[NetworkManager] 解析匹配响应失败");
+            this.emit('match_error', { message: '解析匹配响应失败' });
+            return;
+        }
+        
+        console.log("[NetworkManager] 匹配响应:", response);
+        
+        if (response.ret === 0) {
+            // 成功开始匹配
+            console.log("[NetworkManager] 匹配请求成功，等待匹配结果...");
+            this.emit('match_started', { battle_id: response.battle_id });
+        } else {
+            // 匹配失败
+            const errorMsg = this.protobuf.getErrorMessage(response.ret);
+            console.error("[NetworkManager] 匹配失败:", errorMsg);
+            this.emit('match_error', { 
+                errorCode: response.ret, 
+                message: errorMsg 
+            });
+        }
+    }
+    
+    // 处理匹配结果通知
+    handleMatchResultNotify(data) {
+        console.log("[NetworkManager] 处理匹配结果通知");
+        const notification = this.protobuf.parseMatchResultNotify(data);
+        
+        if (!notification) {
+            console.error("[NetworkManager] 解析匹配结果通知失败");
+            this.emit('match_failed', { message: '解析匹配结果失败' });
+            return;
+        }
+        
+        console.log("[NetworkManager] 匹配结果通知:", notification);
+        
+        if (notification.ret === 0 && notification.room) {
+            // 匹配成功
+            console.log("[NetworkManager] 匹配成功，房间:", notification.room.room?.id);
+            
+            // 更新当前房间信息
+            if (notification.room.room) {
+                this.currentRoomId = notification.room.room.id;
+                GameStateManager.setCurrentRoom(notification.room.room);
+            }
+            
+            if (notification.room.players) {
+                GameStateManager.updateRoomPlayers(notification.room.players);
+            }
+            
+            // 触发匹配成功事件
+            this.emit('match_success', notification.room);
+        } else {
+            // 匹配失败（超时或其他原因）
+            const errorMsg = notification.ret === 8 ? '匹配超时' : this.protobuf.getErrorMessage(notification.ret);
+            console.log("[NetworkManager] 匹配失败:", errorMsg);
+            this.emit('match_failed', { 
+                errorCode: notification.ret, 
+                message: errorMsg 
+            });
+        }
+    }
+    
+    // 处理取消匹配响应
+    handleCancelMatchResponse(data) {
+        console.log("[NetworkManager] 处理取消匹配响应");
+        const response = this.protobuf.parseCancelMatchResponse(data);
+        
+        if (!response) {
+            console.error("[NetworkManager] 解析取消匹配响应失败");
+            return;
+        }
+        
+        console.log("[NetworkManager] 取消匹配响应:", response);
+        
+        if (response.ret === 0) {
+            console.log("[NetworkManager] 成功取消匹配");
+            this.emit('match_cancelled');
+        } else {
+            const errorMsg = this.protobuf.getErrorMessage(response.ret);
+            console.error("[NetworkManager] 取消匹配失败:", errorMsg);
+            this.emit('cancel_match_error', { 
+                errorCode: response.ret, 
+                message: errorMsg 
+            });
         }
     }
 }

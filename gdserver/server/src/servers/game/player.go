@@ -153,18 +153,21 @@ func (p *Player) Run() {
 		// 清理玩家退出时的资源
 		// 1. 先清理battle房间
 		p.cleanupBattleRoom()
-		
-		// 2. 从全局管理器中移除玩家
+
+		// 2. 清理匹配队列
+		p.cleanupMatchQueue()
+
+		// 3. 从全局管理器中移除玩家
 		GlobalManager.DeletePlayer(p.ConnUUID)
-		
-		// 3. 取消上下文以停止所有goroutine
+
+		// 4. 取消上下文以停止所有goroutine
 		p.cancelFunc()
-		
-		// 4. 关闭通道
+
+		// 5. 关闭通道
 		close(p.RecvChan)
-		//close(p.SendChan) //为了避免grpc 收到消息，拿到layer后的瞬间，这里关闭了发送管道，导致的panic ,这里就直接不关闭了，等待垃圾回收
-		
-		// 5. 关闭连接
+		//close(p.SendChan) //为了避免grpc 收到消息,拿到layer后的瞬间,这里关闭了发送管道,导致的panic ,这里就直接不关闭了,等待垃圾回收
+
+		// 6. 关闭连接
 		defer p.Conn.Close()
 
 		slog.Info("Player exited and cleaned up", "conn_uuid", p.ConnUUID, "uid", p.Uid)
@@ -205,7 +208,7 @@ func (p *Player) Run() {
 
 					// 读取包长度
 					length := int(binary.LittleEndian.Uint32(buffer[:4]))
-					
+
 					// 验证包长度是否合理
 					if length <= 0 || length > 1024*1024 { // 限制最大包大小为1MB
 						slog.Error("Invalid packet length", "length", length, "buffer_len", len(buffer))
@@ -364,7 +367,50 @@ func (p *Player) cleanupBattleRoom() {
 	}
 }
 
-// HandleAuthRequest 处理认证请求（统一流程：游客和正常用户都有token）
+// cleanupMatchQueue 清理玩家在匹配队列中的状态
+func (p *Player) cleanupMatchQueue() {
+	if p.Uid == 0 {
+		return // 未认证的玩家不需要清理
+	}
+
+	slog.Info("Cleaning up match queue for disconnected player", "player_id", p.Uid)
+
+	// 连接到MatchServer清理匹配队列
+	conn, err := grpc.Dial(
+		"127.0.0.1:50052",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(),
+		grpc.WithTimeout(2*time.Second),
+	)
+	if err != nil {
+		slog.Error("Failed to connect to MatchServer for cleanup", "player_id", p.Uid, "error", err)
+		return
+	}
+	defer conn.Close()
+
+	client := pb.NewMatchRpcServiceClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	// 发送取消匹配请求
+	cancelMatchReq := &pb.CancelMatchRpcRequest{
+		PlayerId: p.Uid,
+	}
+
+	resp, err := client.CancelMatchRpc(ctx, cancelMatchReq)
+	if err != nil {
+		slog.Error("Failed to cleanup match queue", "player_id", p.Uid, "error", err)
+		return
+	}
+
+	if resp.Ret == pb.ErrorCode_OK {
+		slog.Info("Successfully cleaned up match queue", "player_id", p.Uid)
+	} else {
+		slog.Warn("Match queue cleanup returned error", "player_id", p.Uid, "error_code", resp.Ret)
+	}
+}
+
+// HandleAuthRequest 处理认证请求（统一流程:游客和正常用户都有token）
 func (p *Player) HandleAuthRequest(msg *pb.Message) {
 	var req pb.AuthRequest
 	if err := proto.Unmarshal(msg.GetData(), &req); err != nil {

@@ -30,7 +30,12 @@ class ProtobufManager {
             GAME_ACTION_RESPONSE: 21,
             GAME_ACTION_NOTIFICATION: 22,
             GAME_START_NOTIFICATION: 23,
-            GAME_END_NOTIFICATION: 24
+            GAME_END_NOTIFICATION: 24,
+            MATCH_REQUEST: 26,
+            MATCH_RESPONSE: 27,
+            MATCH_RESULT_NOTIFY: 28,
+            CANCEL_MATCH_REQUEST: 30,
+            CANCEL_MATCH_RESPONSE: 31
         };
     }
     
@@ -1713,6 +1718,225 @@ class ProtobufManager {
         } catch (error) {
             console.error('[Protobuf] 解析游戏结束通知失败:', error);
             return null;
+        }
+    }
+
+    // ========== 匹配相关消息 ==========
+    
+    // 编码MatchRequest
+    encodeMatchRequest(playerData) {
+        const fields = [];
+        
+        // PlayerInitData player_data = 1
+        if (playerData) {
+            const playerDataBytes = this.encodePlayerInitData(playerData);
+            const tag = this.encodeTag(1, 2); // wire type 2 for message
+            const length = this.encodeVarint(playerDataBytes.length);
+            fields.push(this.concatBytes(tag, length, playerDataBytes));
+        }
+        
+        return this.concatBytes(...fields);
+    }
+    
+    // 编码PlayerInitData
+    encodePlayerInitData(playerData) {
+        const fields = [];
+        
+        // uint64 player_id = 1
+        if (playerData.player_id !== undefined) {
+            fields.push(this.encodeIntField(1, playerData.player_id));
+        }
+        
+        // string player_name = 2
+        if (playerData.player_name) {
+            fields.push(this.encodeStringField(2, playerData.player_name));
+        }
+        
+        return this.concatBytes(...fields);
+    }
+    
+    // 创建匹配请求
+    createMatchRequest(playerId, playerName) {
+        this.ensureInitialized();
+        
+        const playerData = {
+            player_id: playerId,
+            player_name: playerName || `玩家${playerId}`
+        };
+        
+        const messageData = this.encodeMatchRequest(playerData);
+        return this.createMessage(this.MESSAGE_IDS.MATCH_REQUEST, messageData);
+    }
+    
+    // 解析MatchResponse
+    parseMatchResponse(data) {
+        console.log('解析匹配响应数据，长度:', data ? data.length : 'null');
+        
+        if (!data || data.length === 0) {
+            // 空响应表示成功开始匹配
+            return {
+                ret: 0,
+                battle_id: ''
+            };
+        }
+        
+        try {
+            let offset = 0;
+            let ret = 0;
+            let battle_id = '';
+            
+            while (offset < data.length) {
+                const tagResult = this.decodeVarint(data, offset);
+                const tag = tagResult.value;
+                offset = tagResult.nextOffset;
+                
+                const fieldNumber = tag >> 3;
+                const wireType = tag & 7;
+                
+                switch (fieldNumber) {
+                    case 1: // ErrorCode ret
+                        if (wireType === 0) {
+                            const valueResult = this.decodeVarint(data, offset);
+                            ret = valueResult.value;
+                            offset = valueResult.nextOffset;
+                        }
+                        break;
+                        
+                    case 2: // string battle_id
+                        if (wireType === 2) {
+                            const lengthResult = this.decodeVarint(data, offset);
+                            const length = lengthResult.value;
+                            offset = lengthResult.nextOffset;
+                            battle_id = this.decodeString(data, offset, length);
+                            offset += length;
+                        }
+                        break;
+                        
+                    default:
+                        console.warn(`未知字段 ${fieldNumber}`);
+                        break;
+                }
+            }
+            
+            console.log('匹配响应解析完成:', { ret, battle_id });
+            return { ret, battle_id };
+        } catch (error) {
+            console.error('解析匹配响应失败:', error);
+            return { ret: 2, battle_id: '' }; // SERVER_ERROR
+        }
+    }
+    
+    // 解析MatchResultNotify
+    parseMatchResultNotify(data) {
+        console.log('解析匹配结果通知数据，长度:', data ? data.length : 'null');
+        
+        if (!data || data.length === 0) {
+            return {
+                ret: 8, // TIMEOUT
+                room: null
+            };
+        }
+        
+        try {
+            let offset = 0;
+            let ret = 0;
+            let room = null;
+            
+            while (offset < data.length) {
+                const tagResult = this.decodeVarint(data, offset);
+                const tag = tagResult.value;
+                offset = tagResult.nextOffset;
+                
+                const fieldNumber = tag >> 3;
+                const wireType = tag & 7;
+                
+                switch (fieldNumber) {
+                    case 1: // int32 ret
+                        if (wireType === 0) {
+                            const valueResult = this.decodeVarint(data, offset);
+                            ret = valueResult.value;
+                            offset = valueResult.nextOffset;
+                        }
+                        break;
+                        
+                    case 2: // RoomDetail room
+                        if (wireType === 2) {
+                            const lengthResult = this.decodeVarint(data, offset);
+                            const length = lengthResult.value;
+                            offset = lengthResult.nextOffset;
+                            const roomData = data.slice(offset, offset + length);
+                            room = this.parseRoomDetail(roomData);
+                            offset += length;
+                        }
+                        break;
+                        
+                    default:
+                        console.warn(`未知字段 ${fieldNumber}`);
+                        break;
+                }
+            }
+            
+            console.log('匹配结果通知解析完成:', { ret, room });
+            return { ret, room };
+        } catch (error) {
+            console.error('解析匹配结果通知失败:', error);
+            return { ret: 2, room: null }; // SERVER_ERROR
+        }
+    }
+    
+    // 编码CancelMatchRequest
+    encodeCancelMatchRequest(playerId) {
+        const fields = [];
+        
+        // uint64 player_id = 1
+        if (playerId !== undefined) {
+            fields.push(this.encodeIntField(1, playerId));
+        }
+        
+        return this.concatBytes(...fields);
+    }
+    
+    // 创建取消匹配请求
+    createCancelMatchRequest(playerId) {
+        this.ensureInitialized();
+        
+        const messageData = this.encodeCancelMatchRequest(playerId);
+        return this.createMessage(this.MESSAGE_IDS.CANCEL_MATCH_REQUEST, messageData);
+    }
+    
+    // 解析CancelMatchResponse
+    parseCancelMatchResponse(data) {
+        console.log('解析取消匹配响应数据，长度:', data ? data.length : 'null');
+        
+        if (!data || data.length === 0) {
+            // 空响应表示成功
+            return { ret: 0 };
+        }
+        
+        try {
+            let offset = 0;
+            let ret = 0;
+            
+            while (offset < data.length) {
+                const tagResult = this.decodeVarint(data, offset);
+                const tag = tagResult.value;
+                offset = tagResult.nextOffset;
+                
+                const fieldNumber = tag >> 3;
+                const wireType = tag & 7;
+                
+                if (fieldNumber === 1 && wireType === 0) {
+                    const valueResult = this.decodeVarint(data, offset);
+                    ret = valueResult.value;
+                    offset = valueResult.nextOffset;
+                }
+            }
+            
+            console.log('取消匹配响应解析完成:', { ret });
+            return { ret };
+        } catch (error) {
+            console.error('解析取消匹配响应失败:', error);
+            return { ret: 2 }; // SERVER_ERROR
         }
     }
 

@@ -46,7 +46,7 @@ func main() {
 	}
 
 	grpcServer := grpc.NewServer()
-	pb.RegisterMatchServiceServer(grpcServer, matchServer)
+	pb.RegisterMatchRpcServiceServer(grpcServer, matchServer)
 
 	// 优雅退出
 	sigCh := make(chan os.Signal, 1)

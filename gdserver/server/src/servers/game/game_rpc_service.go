@@ -179,3 +179,33 @@ func (s *GameGRPCService) GameEndNotifyRpc(ctx context.Context, req *pb.GameEndN
 		Ret: int32(pb.ErrorCode_OK),
 	}, nil
 }
+
+func (s *GameGRPCService) MatchResultNotifyRpc(ctx context.Context, req *pb.MatchResultNotifyRequest) (*pb.NotifyResponse, error) {
+	// 处理匹配结果通知逻辑
+	slog.Info("Received MatchResultNotifyRpc", "player_id", req.BeNotifiedUid, "ret", req.MatchResult.Ret)
+
+	//通过 被通知者id 找到玩家的连接
+	player, ok := GlobalManager.GetPlayerByUin(req.BeNotifiedUid)
+	if !ok {
+		slog.Error("Player not found for notification", "player_id", req.BeNotifiedUid)
+		return &pb.NotifyResponse{
+			Ret: int32(pb.ErrorCode_NOT_FOUND),
+		}, nil
+	}
+
+	// 直接发送匹配结果通知
+	noti := &pb.Message{
+		Id:          pb.MessageId_MATCH_RESULT_NOTIFY,
+		MsgSerialNo: -1,
+		ClientId:    "",
+		Data:        mustMarshal(req.MatchResult),
+	}
+
+	player.SendMessage(noti)
+
+	slog.Info("MatchResultNotifyRpc processed", "be_notified_uid", req.BeNotifiedUid, "ret", req.MatchResult.Ret)
+
+	return &pb.NotifyResponse{
+		Ret: int32(pb.ErrorCode_OK),
+	}, nil
+}

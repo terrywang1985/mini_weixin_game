@@ -442,6 +442,68 @@ func (s *BattleServer) GetRoomListRpc(ctx context.Context, req *pb.GetRoomListRp
 	}, nil
 }
 
+// MatchCreateRoomRpc 匹配系统创建房间(多个玩家同时加入)
+func (s *BattleServer) MatchCreateRoomRpc(ctx context.Context, req *pb.MatchCreateRoomRpcRequest) (*pb.MatchCreateRoomRpcResponse, error) {
+	slog.Info("MatchCreateRoomRpc called", "player_count", len(req.Player))
+
+	if len(req.Player) == 0 {
+		slog.Error("No players provided for match room creation")
+		return &pb.MatchCreateRoomRpcResponse{Ret: pb.ErrorCode_INVALID_PARAM}, nil
+	}
+
+	s.RoomsMutex.Lock()
+	defer s.RoomsMutex.Unlock()
+
+	s.PlayersMutex.Lock()
+	defer s.PlayersMutex.Unlock()
+
+	// 检查所有玩家是否已经在房间中
+	for _, player := range req.Player {
+		if roomID, exists := s.PlayerInRoom[player.PlayerId]; exists {
+			slog.Warn("Player already in room", "player_id", player.PlayerId, "room_id", roomID)
+			return &pb.MatchCreateRoomRpcResponse{Ret: pb.ErrorCode_PLAYER_ALREADY_IN_ROOM}, nil
+		}
+	}
+
+	// 生成房间ID
+	roomID, _ := s.RedisPool.GenerateBattleID()
+
+	// 创建新战斗房间
+	room := NewBattleRoom(roomID, s, GameType_WordCardGame)
+
+	// 添加所有匹配的玩家到房间
+	for _, player := range req.Player {
+		room.AddPlayer(player.PlayerId, player.PlayerName)
+		s.PlayerInRoom[player.PlayerId] = roomID
+		slog.Info("Added matched player to room", "player_id", player.PlayerId, "player_name", player.PlayerName, "room_id", roomID)
+	}
+
+	// 启动房间
+	room.Run()
+	s.BattleRooms[roomID] = room
+
+	slog.Info("Match room created successfully", "room_id", roomID, "player_count", len(req.Player))
+
+	// 返回房间详情
+	roomDetail := &pb.RoomDetail{
+		Room: &pb.Room{
+			Id:             roomID,
+			Name:           "Match Room",
+			MaxPlayers:     4,
+			CurrentPlayers: int32(len(req.Player)),
+		},
+		CurrentPlayers: room.GetPlayerList(),
+	}
+
+	// 广播房间状态给所有玩家
+	room.BroadcastRoomStatus()
+
+	return &pb.MatchCreateRoomRpcResponse{
+		Ret:  pb.ErrorCode_OK,
+		Room: roomDetail,
+	}, nil
+}
+
 // 获取本机IP
 func getLocalIP() (string, error) {
 	addrs, err := net.InterfaceAddrs()

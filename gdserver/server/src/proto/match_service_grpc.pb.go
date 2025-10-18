@@ -19,143 +19,143 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	MatchService_StartMatch_FullMethodName  = "/match.MatchService/StartMatch"
-	MatchService_CancelMatch_FullMethodName = "/match.MatchService/CancelMatch"
+	MatchRpcService_StartMatchRpc_FullMethodName  = "/match.MatchRpcService/StartMatchRpc"
+	MatchRpcService_CancelMatchRpc_FullMethodName = "/match.MatchRpcService/CancelMatchRpc"
 )
 
-// MatchServiceClient is the client API for MatchService service.
+// MatchRpcServiceClient is the client API for MatchRpcService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // 匹配服务
-type MatchServiceClient interface {
-	StartMatch(ctx context.Context, in *MatchRpcRequest, opts ...grpc.CallOption) (*MatchRpcResponse, error)
-	CancelMatch(ctx context.Context, in *CancelMatchRpcRequest, opts ...grpc.CallOption) (*MatchRpcResponse, error)
+type MatchRpcServiceClient interface {
+	StartMatchRpc(ctx context.Context, in *MatchRpcRequest, opts ...grpc.CallOption) (*MatchRpcResponse, error)
+	CancelMatchRpc(ctx context.Context, in *CancelMatchRpcRequest, opts ...grpc.CallOption) (*MatchRpcResponse, error)
 }
 
-type matchServiceClient struct {
+type matchRpcServiceClient struct {
 	cc grpc.ClientConnInterface
 }
 
-func NewMatchServiceClient(cc grpc.ClientConnInterface) MatchServiceClient {
-	return &matchServiceClient{cc}
+func NewMatchRpcServiceClient(cc grpc.ClientConnInterface) MatchRpcServiceClient {
+	return &matchRpcServiceClient{cc}
 }
 
-func (c *matchServiceClient) StartMatch(ctx context.Context, in *MatchRpcRequest, opts ...grpc.CallOption) (*MatchRpcResponse, error) {
+func (c *matchRpcServiceClient) StartMatchRpc(ctx context.Context, in *MatchRpcRequest, opts ...grpc.CallOption) (*MatchRpcResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(MatchRpcResponse)
-	err := c.cc.Invoke(ctx, MatchService_StartMatch_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, MatchRpcService_StartMatchRpc_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *matchServiceClient) CancelMatch(ctx context.Context, in *CancelMatchRpcRequest, opts ...grpc.CallOption) (*MatchRpcResponse, error) {
+func (c *matchRpcServiceClient) CancelMatchRpc(ctx context.Context, in *CancelMatchRpcRequest, opts ...grpc.CallOption) (*MatchRpcResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(MatchRpcResponse)
-	err := c.cc.Invoke(ctx, MatchService_CancelMatch_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, MatchRpcService_CancelMatchRpc_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// MatchServiceServer is the server API for MatchService service.
-// All implementations must embed UnimplementedMatchServiceServer
+// MatchRpcServiceServer is the server API for MatchRpcService service.
+// All implementations must embed UnimplementedMatchRpcServiceServer
 // for forward compatibility.
 //
 // 匹配服务
-type MatchServiceServer interface {
-	StartMatch(context.Context, *MatchRpcRequest) (*MatchRpcResponse, error)
-	CancelMatch(context.Context, *CancelMatchRpcRequest) (*MatchRpcResponse, error)
-	mustEmbedUnimplementedMatchServiceServer()
+type MatchRpcServiceServer interface {
+	StartMatchRpc(context.Context, *MatchRpcRequest) (*MatchRpcResponse, error)
+	CancelMatchRpc(context.Context, *CancelMatchRpcRequest) (*MatchRpcResponse, error)
+	mustEmbedUnimplementedMatchRpcServiceServer()
 }
 
-// UnimplementedMatchServiceServer must be embedded to have
+// UnimplementedMatchRpcServiceServer must be embedded to have
 // forward compatible implementations.
 //
 // NOTE: this should be embedded by value instead of pointer to avoid a nil
 // pointer dereference when methods are called.
-type UnimplementedMatchServiceServer struct{}
+type UnimplementedMatchRpcServiceServer struct{}
 
-func (UnimplementedMatchServiceServer) StartMatch(context.Context, *MatchRpcRequest) (*MatchRpcResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method StartMatch not implemented")
+func (UnimplementedMatchRpcServiceServer) StartMatchRpc(context.Context, *MatchRpcRequest) (*MatchRpcResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StartMatchRpc not implemented")
 }
-func (UnimplementedMatchServiceServer) CancelMatch(context.Context, *CancelMatchRpcRequest) (*MatchRpcResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method CancelMatch not implemented")
+func (UnimplementedMatchRpcServiceServer) CancelMatchRpc(context.Context, *CancelMatchRpcRequest) (*MatchRpcResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CancelMatchRpc not implemented")
 }
-func (UnimplementedMatchServiceServer) mustEmbedUnimplementedMatchServiceServer() {}
-func (UnimplementedMatchServiceServer) testEmbeddedByValue()                      {}
+func (UnimplementedMatchRpcServiceServer) mustEmbedUnimplementedMatchRpcServiceServer() {}
+func (UnimplementedMatchRpcServiceServer) testEmbeddedByValue()                         {}
 
-// UnsafeMatchServiceServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to MatchServiceServer will
+// UnsafeMatchRpcServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to MatchRpcServiceServer will
 // result in compilation errors.
-type UnsafeMatchServiceServer interface {
-	mustEmbedUnimplementedMatchServiceServer()
+type UnsafeMatchRpcServiceServer interface {
+	mustEmbedUnimplementedMatchRpcServiceServer()
 }
 
-func RegisterMatchServiceServer(s grpc.ServiceRegistrar, srv MatchServiceServer) {
-	// If the following call pancis, it indicates UnimplementedMatchServiceServer was
+func RegisterMatchRpcServiceServer(s grpc.ServiceRegistrar, srv MatchRpcServiceServer) {
+	// If the following call pancis, it indicates UnimplementedMatchRpcServiceServer was
 	// embedded by pointer and is nil.  This will cause panics if an
 	// unimplemented method is ever invoked, so we test this at initialization
 	// time to prevent it from happening at runtime later due to I/O.
 	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
 		t.testEmbeddedByValue()
 	}
-	s.RegisterService(&MatchService_ServiceDesc, srv)
+	s.RegisterService(&MatchRpcService_ServiceDesc, srv)
 }
 
-func _MatchService_StartMatch_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _MatchRpcService_StartMatchRpc_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(MatchRpcRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(MatchServiceServer).StartMatch(ctx, in)
+		return srv.(MatchRpcServiceServer).StartMatchRpc(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: MatchService_StartMatch_FullMethodName,
+		FullMethod: MatchRpcService_StartMatchRpc_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MatchServiceServer).StartMatch(ctx, req.(*MatchRpcRequest))
+		return srv.(MatchRpcServiceServer).StartMatchRpc(ctx, req.(*MatchRpcRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _MatchService_CancelMatch_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _MatchRpcService_CancelMatchRpc_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CancelMatchRpcRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(MatchServiceServer).CancelMatch(ctx, in)
+		return srv.(MatchRpcServiceServer).CancelMatchRpc(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: MatchService_CancelMatch_FullMethodName,
+		FullMethod: MatchRpcService_CancelMatchRpc_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MatchServiceServer).CancelMatch(ctx, req.(*CancelMatchRpcRequest))
+		return srv.(MatchRpcServiceServer).CancelMatchRpc(ctx, req.(*CancelMatchRpcRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-// MatchService_ServiceDesc is the grpc.ServiceDesc for MatchService service.
+// MatchRpcService_ServiceDesc is the grpc.ServiceDesc for MatchRpcService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
-var MatchService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "match.MatchService",
-	HandlerType: (*MatchServiceServer)(nil),
+var MatchRpcService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "match.MatchRpcService",
+	HandlerType: (*MatchRpcServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "StartMatch",
-			Handler:    _MatchService_StartMatch_Handler,
+			MethodName: "StartMatchRpc",
+			Handler:    _MatchRpcService_StartMatchRpc_Handler,
 		},
 		{
-			MethodName: "CancelMatch",
-			Handler:    _MatchService_CancelMatch_Handler,
+			MethodName: "CancelMatchRpc",
+			Handler:    _MatchRpcService_CancelMatchRpc_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

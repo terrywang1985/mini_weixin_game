@@ -15,6 +15,9 @@ class MainMenu {
         this.buttons = [];
         this.isVisible = false;
         
+        // 匹配状态标志
+        this.isMatching = false;
+        
         // 界面配置
         this.config = {
             backgroundColor: '#2c3e50',
@@ -48,18 +51,56 @@ class MainMenu {
         this.networkManager.on('room_join_failed', (errorInfo) => {
             this.handleRoomJoinFailed(errorInfo);
         });
+        
+        // 监听匹配状态变化
+        this.networkManager.on('match_started', () => {
+            this.isMatching = true;
+            console.log("[MainMenu] 匹配已开始，禁用匹配按钮");
+        });
+        
+        this.networkManager.on('match_success', () => {
+            this.isMatching = false;
+            console.log("[MainMenu] 匹配成功，重置匹配状态");
+        });
+        
+        this.networkManager.on('match_failed', () => {
+            this.isMatching = false;
+            console.log("[MainMenu] 匹配失败，重置匹配状态");
+        });
+        
+        this.networkManager.on('match_error', () => {
+            this.isMatching = false;
+            console.log("[MainMenu] 匹配错误，重置匹配状态");
+        });
+        
+        this.networkManager.on('match_cancelled', () => {
+            this.isMatching = false;
+            console.log("[MainMenu] 匹配已取消，重置匹配状态");
+        });
     }
     
     createButtons() {
         const centerX = this.canvas.width / 2;
         const centerY = this.canvas.height / 2;
         
+        // 随机匹配按钮（新增）
+        this.buttons.push({
+            id: 'random_match',
+            text: '随机匹配',
+            x: centerX - this.config.buttonWidth / 2,
+            y: centerY - this.config.buttonHeight * 1.5 - this.config.buttonSpacing,
+            width: this.config.buttonWidth,
+            height: this.config.buttonHeight,
+            isHovered: false,
+            onClick: () => this.onRandomMatchClick()
+        });
+        
         // 创建房间按钮
         this.buttons.push({
             id: 'create_room',
             text: '创建房间',
             x: centerX - this.config.buttonWidth / 2,
-            y: centerY - this.config.buttonHeight - this.config.buttonSpacing / 2,
+            y: centerY - this.config.buttonHeight / 2,
             width: this.config.buttonWidth,
             height: this.config.buttonHeight,
             isHovered: false,
@@ -71,7 +112,7 @@ class MainMenu {
             id: 'join_room',
             text: '加入指定房间',
             x: centerX - this.config.buttonWidth / 2,
-            y: centerY + this.config.buttonSpacing / 2,
+            y: centerY + this.config.buttonHeight / 2 + this.config.buttonSpacing,
             width: this.config.buttonWidth,
             height: this.config.buttonHeight,
             isHovered: false,
@@ -107,6 +148,9 @@ class MainMenu {
     render() {
         if (!this.isVisible) return;
         
+        // 如果正在匹配中,不渲染主菜单(避免透过遮罩看到闪烁)
+        if (this.isMatching) return;
+        
         // 清空画布
         this.ctx.fillStyle = this.config.backgroundColor;
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
@@ -130,7 +174,7 @@ class MainMenu {
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
         
-        const titleY = this.canvas.height / 2 - 120;
+        const titleY = this.canvas.height / 2 - 160;
         this.ctx.fillText('连词成句', this.canvas.width / 2, titleY);
     }
     
@@ -244,6 +288,30 @@ class MainMenu {
         
         // 弹出输入框让用户输入房间名称
         this.showCreateRoomDialog();
+    }
+    
+    onRandomMatchClick() {
+        console.log("点击随机匹配");
+        console.log("[MainMenu] 当前 isMatching 状态:", this.isMatching); // 调试日志
+        
+        if (!GameStateManager.isAuthenticated()) {
+            this.showMessage("请先登录");
+            return;
+        }
+        
+        // 检查是否已经在匹配中
+        if (this.isMatching) {
+            console.log("[MainMenu] 已在匹配中，忽略重复点击");
+            return;
+        }
+        
+        // 立即设置匹配状态,防止快速双击
+        this.isMatching = true;
+        console.log("[MainMenu] 设置 isMatching = true,防止重复请求");
+        
+        // 发起匹配请求
+        console.log("[MainMenu] 开始随机匹配");
+        this.networkManager.startMatch();
     }
     
     
@@ -383,6 +451,12 @@ class MainMenu {
     }
     
     handleClick(event) {
+        // 如果正在匹配中,忽略所有点击事件
+        if (this.isMatching) {
+            console.log("[MainMenu] 匹配中,忽略点击事件");
+            return;
+        }
+        
         // 微信小游戏环境中不支持getBoundingClientRect，使用其他方式获取坐标
         let x, y;
         if (typeof wx !== 'undefined') {

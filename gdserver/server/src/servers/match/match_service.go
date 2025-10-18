@@ -1,7 +1,9 @@
 package main
 
 import (
+	"common/rpc"
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -13,14 +15,18 @@ import (
 )
 
 const (
-	MatchTimeout     = 30 * time.Second // 匹配超时时间
-	RoomServerAddr   = "127.0.0.1:8693" // Room Server 地址
-	GameServerAddr   = "127.0.0.1:8691" // Game Server 地址
-	MatchCheckPeriod = 500 * time.Millisecond
+	MatchTimeout     = 30 * time.Second       // 匹配超时时间
+	MatchCheckPeriod = 500 * time.Millisecond // 匹配检查周期
+)
+
+var (
+	// 使用 common/rpc 中定义的端口
+	RoomServerAddr = fmt.Sprintf("127.0.0.1:%d", rpc.RoomServiceGRPCPort) // 8693
+	GameServerAddr = fmt.Sprintf("127.0.0.1:%d", rpc.GameServiceGRPCPort) // 8694 (修正!)
 )
 
 type OptimizedMatchServer struct {
-	pb.UnimplementedMatchServiceServer
+	pb.UnimplementedMatchRpcServiceServer
 
 	mu           sync.RWMutex
 	matchQueue   map[uint64]*pb.MatchRpcRequest // 玩家ID到匹配请求的映射
@@ -76,7 +82,7 @@ func (s *OptimizedMatchServer) Close() {
 	}
 }
 
-func (s *OptimizedMatchServer) StartMatch(ctx context.Context, req *pb.MatchRpcRequest) (*pb.MatchRpcResponse, error) {
+func (s *OptimizedMatchServer) StartMatchRpc(ctx context.Context, req *pb.MatchRpcRequest) (*pb.MatchRpcResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -97,7 +103,7 @@ func (s *OptimizedMatchServer) StartMatch(ctx context.Context, req *pb.MatchRpcR
 	return &pb.MatchRpcResponse{Ret: pb.ErrorCode_OK}, nil
 }
 
-func (s *OptimizedMatchServer) CancelMatch(ctx context.Context, req *pb.CancelMatchRequest) (*pb.MatchRpcResponse, error) {
+func (s *OptimizedMatchServer) CancelMatchRpc(ctx context.Context, req *pb.CancelMatchRpcRequest) (*pb.MatchRpcResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

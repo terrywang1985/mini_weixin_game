@@ -23,7 +23,7 @@ message CancelMatchRpcRequest {
 
 
 // 匹配服务
-service MatchService {
-  rpc StartMatch(MatchRpcRequest) returns (MatchRpcResponse);
-  rpc CancelMatch(CancelMatchRpcRequest) returns (MatchRpcResponse);
+service MatchRpcService {
+  rpc StartMatchRpc(MatchRpcRequest) returns (MatchRpcResponse);
+  rpc CancelMatchRpc(CancelMatchRpcRequest) returns (MatchRpcResponse);
 }

@@ -3,6 +3,7 @@ import GameStateManager from './GameStateManager.js';
 import MainMenu from './MainMenu.js';
 import RoomList from './RoomList.js';
 import RoomManager from './RoomManager.js';
+import MatchWaitingUI from './MatchWaitingUI.js';
 
 /**
  * 微信小游戏主函数 - 重构版本
@@ -39,6 +40,7 @@ export default class Main {
     this.mainMenu = new MainMenu(this.canvas, this.networkManager);
     this.roomList = new RoomList(this.canvas, this.networkManager);
     this.roomManager = new RoomManager(this.canvas, this.networkManager);
+    this.matchWaitingUI = new MatchWaitingUI(this.canvas, this.networkManager);
 
     // 当前活动页面
     this.currentPage = null;
@@ -168,11 +170,15 @@ export default class Main {
         console.error("自动登录失败");
         this.loadingMessage = "登录失败，请重试";
         this.isLoading = false;
+        // 显示重连按钮(Canvas绘制)
+        this.needsRetryButtonHandling = true;
       }
     } catch (error) {
       console.error("自动登录过程中发生错误:", error);
       this.loadingMessage = "连接失败: " + error.message;
       this.isLoading = false;
+      // 显示重连按钮(Canvas绘制)
+      this.needsRetryButtonHandling = true;
     }
   }
   
@@ -209,6 +215,8 @@ export default class Main {
       console.error("HTTP登录失败:", error);
       this.loadingMessage = "登录失败: " + error;
       this.isLoading = false;
+      // 显示重连按钮(Canvas绘制)
+      this.needsRetryButtonHandling = true;
     });
     
     // WebSocket连接事件
@@ -219,7 +227,9 @@ export default class Main {
     
     this.networkManager.on('disconnected', () => {
       console.log("WebSocket连接断开");
-      this.showReconnectDialog();
+      this.loadingMessage = "连接已断开";
+      this.isLoading = false;
+      this.needsRetryButtonHandling = true;
     });
     
     // 认证事件
@@ -370,10 +380,27 @@ export default class Main {
       wx.onTouchStart((res) => {
         if (res.touches && res.touches.length > 0) {
           const touch = res.touches[0];
-          // 处理重试按钮点击
+          const x = touch.clientX;
+          const y = touch.clientY;
+          
+          // 优先级1: 匹配等待UI（最高优先级，拦截所有点击）
+          if (this.matchWaitingUI && this.matchWaitingUI.isVisible) {
+            const handled = this.matchWaitingUI.handleClick(x, y);
+            if (handled) {
+              return; // 事件已被处理，不再传播
+            }
+          }
+          
+          // 优先级2: 重试按钮处理
           if (this.needsRetryButtonHandling) {
-            this.handleRetryButtonClick(touch.clientX, touch.clientY);
-            this.needsRetryButtonHandling = false; // 重置标志
+            this.handleRetryButtonClick(x, y);
+            this.needsRetryButtonHandling = false;
+            return;
+          }
+          
+          // 优先级3: 当前页面的点击处理
+          if (this.currentPage && typeof this.currentPage.handleClick === 'function') {
+            this.currentPage.handleClick({ clientX: x, clientY: y });
           }
         }
       });
@@ -433,6 +460,8 @@ export default class Main {
   async reconnect() {
     console.log("尝试重新连接...");
     this.isLoading = true;
+    this.needsRetryButtonHandling = false; // 清除重连按钮状态
+    this.retryButtonArea = null; // 清除按钮区域
     this.loadingMessage = "正在重新连接...";
     GameStateManager.setGameState(GameStateManager.GAME_STATES.LOADING);
     
@@ -451,6 +480,7 @@ export default class Main {
       console.error("重连失败:", error);
       this.loadingMessage = "重连失败: " + error.message;
       this.isLoading = false;
+      this.needsRetryButtonHandling = true; // 重连失败,再次显示按钮
     }
   }
   
@@ -506,6 +536,9 @@ export default class Main {
     // 绘制加载画面或当前页面
     if (this.isLoading) {
       this.drawLoadingScreen();
+    } else if (this.needsRetryButtonHandling) {
+      // 如果需要显示重连按钮(连接失败状态)
+      this.drawLoadingScreen();
     } else if (this.currentPage && typeof this.currentPage.render === 'function') {
       this.currentPage.render();
     } else {
@@ -529,6 +562,11 @@ export default class Main {
         this.ctx.fillStyle = '#2c3e50';
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
       }
+    }
+    
+    // 渲染匹配等待 UI（覆盖在其他内容之上）
+    if (this.matchWaitingUI && this.matchWaitingUI.isVisible) {
+      this.matchWaitingUI.render();
     }
 
     // 屏幕调试日志渲染（如开启）
@@ -555,5 +593,47 @@ export default class Main {
     const centerY = this.canvas.height / 2;
     
     this.ctx.fillText(this.loadingMessage, centerX, centerY);
+    
+    // 如果加载失败,显示重连按钮
+    if (!this.isLoading && (this.loadingMessage.includes('失败') || this.loadingMessage.includes('错误') || this.loadingMessage.includes('断开'))) {
+      this.drawReconnectButton();
+    }
+  }
+  
+  // 绘制重连按钮
+  drawReconnectButton() {
+    if (!this.ctx) return;
+    
+    const centerX = this.canvas.width / 2;
+    const centerY = this.canvas.height / 2;
+    const buttonWidth = 200;
+    const buttonHeight = 50;
+    const buttonX = centerX - buttonWidth / 2;
+    const buttonY = centerY + 50;
+    
+    // 保存按钮区域供点击检测使用
+    this.retryButtonArea = {
+      x: buttonX,
+      y: buttonY,
+      width: buttonWidth,
+      height: buttonHeight
+    };
+    this.needsRetryButtonHandling = true;
+    
+    // 绘制按钮背景
+    this.ctx.fillStyle = '#3498db';
+    this.ctx.fillRect(buttonX, buttonY, buttonWidth, buttonHeight);
+    
+    // 绘制按钮边框
+    this.ctx.strokeStyle = '#2980b9';
+    this.ctx.lineWidth = 2;
+    this.ctx.strokeRect(buttonX, buttonY, buttonWidth, buttonHeight);
+    
+    // 绘制按钮文字
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.font = '18px Arial';
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'middle';
+    this.ctx.fillText('重新连接', centerX, buttonY + buttonHeight / 2);
   }
 }
